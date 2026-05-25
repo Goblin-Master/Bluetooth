@@ -16,7 +16,9 @@ void main() {
 
     await tester.pumpWidget(BluetoothClientApp(controller: controller));
 
-    expect(find.text('RFCOMM 调试'), findsOneWidget);
+    expect(find.text('Bluetooth 调试'), findsOneWidget);
+    expect(find.text('RFCOMM'), findsOneWidget);
+    expect(find.text('BLE'), findsOneWidget);
     expect(find.text('刷新已配对设备'), findsOneWidget);
     expect(find.text('Windows PC'), findsOneWidget);
     expect(find.text('AA:BB:CC:DD:EE:01'), findsOneWidget);
@@ -94,6 +96,17 @@ void main() {
       ),
     );
     expect(errorText.maxLines, isNull);
+  });
+
+  testWidgets('shows BLE placeholder tab', (tester) async {
+    final controller = FakeRfcommController();
+
+    await tester.pumpWidget(BluetoothClientApp(controller: controller));
+    await tester.tap(find.text('BLE'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('BLE GATT 调试'), findsOneWidget);
+    expect(find.text('待实现'), findsWidgets);
   });
 }
 

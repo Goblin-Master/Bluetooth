@@ -19,7 +19,7 @@ class BluetoothClientApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RFCOMM 调试',
+      title: 'Bluetooth 调试',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -29,7 +29,41 @@ class BluetoothClientApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFFF5F7F7),
         useMaterial3: true,
       ),
-      home: RfcommDebugPage(controller: controller ?? RealRfcommController()),
+      home: BluetoothClientHome(
+        rfcommController: controller ?? RealRfcommController(),
+      ),
+    );
+  }
+}
+
+class BluetoothClientHome extends StatelessWidget {
+  const BluetoothClientHome({super.key, required this.rfcommController});
+
+  final RfcommController rfcommController;
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Bluetooth 调试'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'RFCOMM', icon: Icon(Icons.bluetooth_connected)),
+              Tab(text: 'BLE', icon: Icon(Icons.bluetooth_searching)),
+            ],
+          ),
+        ),
+        body: SafeArea(
+          child: TabBarView(
+            children: [
+              RfcommDebugPage(controller: rfcommController),
+              const BlePlaceholderPage(),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -322,35 +356,53 @@ class _RfcommDebugPageState extends State<RfcommDebugPage> {
       animation: widget.controller,
       builder: (context, _) {
         final controller = widget.controller;
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('RFCOMM 调试'),
-            actions: [
-              IconButton(
-                tooltip: '刷新已配对设备',
-                onPressed: controller.isBusy
-                    ? null
-                    : controller.refreshPairedDevices,
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
-          ),
-          body: SafeArea(
+        return Column(
+          children: [
+            _StatusBar(controller: controller),
+            Expanded(child: _PairedDeviceList(controller: controller)),
+            _MessageBar(
+              controller: controller,
+              messageController: _messageController,
+              channelController: _channelController,
+            ),
+            _RfcommDetailsPanel(controller: controller),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class BlePlaceholderPage extends StatelessWidget {
+  const BlePlaceholderPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: const [
+        Expanded(
+          child: Center(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _StatusBar(controller: controller),
-                Expanded(child: _PairedDeviceList(controller: controller)),
-                _MessageBar(
-                  controller: controller,
-                  messageController: _messageController,
-                  channelController: _channelController,
-                ),
-                _DetailsPanel(controller: controller),
+                Icon(Icons.bluetooth_searching, size: 44),
+                SizedBox(height: 12),
+                Text('BLE GATT 调试', style: TextStyle(fontSize: 20)),
+                SizedBox(height: 4),
+                Text('待实现'),
               ],
             ),
           ),
-        );
-      },
+        ),
+        SharedDetailsPanel(
+          connected: false,
+          rows: [
+            DetailRowData(label: '状态', value: '待实现'),
+            DetailRowData(label: '服务 UUID', value: '-'),
+            DetailRowData(label: '特征 UUID', value: '-'),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -606,8 +658,8 @@ class _MessageBar extends StatelessWidget {
   }
 }
 
-class _DetailsPanel extends StatelessWidget {
-  const _DetailsPanel({required this.controller});
+class _RfcommDetailsPanel extends StatelessWidget {
+  const _RfcommDetailsPanel({required this.controller});
 
   final RfcommController controller;
 
@@ -615,6 +667,43 @@ class _DetailsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final selected = controller.selectedDevice;
     final sent = controller.lastSentMessage;
+    final rows = [
+      DetailRowData(label: '选中设备', value: selected?.label ?? '无'),
+      DetailRowData(label: '设备地址', value: selected?.address ?? '-'),
+      const DetailRowData(label: '服务 UUID', value: defaultSppUuid),
+      DetailRowData(label: '通道', value: controller.rfcommChannel.toString()),
+      DetailRowData(
+        label: '最近发送',
+        value: sent == null ? '-' : '"${sent.text}" (${sent.byteLength} bytes)',
+      ),
+      DetailRowData(label: '最近回包', value: controller.lastReceivedText ?? '-'),
+      if (controller.lastError != null)
+        DetailRowData(label: '错误', value: controller.lastError!),
+    ];
+
+    return SharedDetailsPanel(connected: controller.isConnected, rows: rows);
+  }
+}
+
+class DetailRowData {
+  const DetailRowData({required this.label, required this.value});
+
+  final String label;
+  final String value;
+}
+
+class SharedDetailsPanel extends StatelessWidget {
+  const SharedDetailsPanel({
+    super.key,
+    required this.connected,
+    required this.rows,
+  });
+
+  final bool connected;
+  final List<DetailRowData> rows;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
       constraints: const BoxConstraints(maxHeight: 260),
@@ -642,29 +731,12 @@ class _DetailsPanel extends StatelessWidget {
                     ).textTheme.titleSmall?.copyWith(color: Colors.white),
                   ),
                   const Spacer(),
-                  Text(controller.isConnected ? '已连接' : '未连接'),
+                  Text(connected ? '已连接' : '未连接'),
                 ],
               ),
               const SizedBox(height: 8),
-              _DetailLine(label: '选中设备', value: selected?.label ?? '无'),
-              _DetailLine(label: '设备地址', value: selected?.address ?? '-'),
-              _DetailLine(label: '服务 UUID', value: defaultSppUuid),
-              _DetailLine(
-                label: '通道',
-                value: controller.rfcommChannel.toString(),
-              ),
-              _DetailLine(
-                label: '最近发送',
-                value: sent == null
-                    ? '-'
-                    : '"${sent.text}" (${sent.byteLength} bytes)',
-              ),
-              _DetailLine(
-                label: '最近回包',
-                value: controller.lastReceivedText ?? '-',
-              ),
-              if (controller.lastError != null)
-                _DetailLine(label: '错误', value: controller.lastError!),
+              for (final row in rows)
+                _DetailLine(label: row.label, value: row.value),
             ],
           ),
         ),
