@@ -69,7 +69,12 @@ function Install-Uv {
     } else {
         $script = Invoke-WebRequest -Uri $installScript -UseBasicParsing
     }
-    Invoke-Expression $script.Content
+    $scriptContent = $script.Content
+    if ($scriptContent -is [byte[]]) {
+        $scriptContent = [System.Text.Encoding]::UTF8.GetString($scriptContent)
+    }
+
+    Invoke-Expression $scriptContent
 
     $uvBin = Join-Path $env:USERPROFILE ".local\bin"
     Add-UserPathEntries -Entries @($uvBin)
