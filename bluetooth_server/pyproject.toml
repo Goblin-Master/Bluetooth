@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.scripts]
-bt-server = "bluetooth_server.bt_server:main"
+bt-server = "bluetooth_server.cli:main"
 
 [build-system]
 requires = ["hatchling"]

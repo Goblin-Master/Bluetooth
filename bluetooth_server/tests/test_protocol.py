@@ -1,6 +1,8 @@
 import unittest
 
-from bluetooth_server.bt_server import build_echo_response, decode_message, normalize_channel
+from bluetooth_server.cli import build_parser
+from bluetooth_server.protocol import build_echo_response, decode_message, handle_payload
+from bluetooth_server.rfcomm_server import DEFAULT_CHANNEL, normalize_channel
 
 
 class ProtocolTest(unittest.TestCase):
@@ -14,6 +16,10 @@ class ProtocolTest(unittest.TestCase):
     def test_build_echo_response_uses_newline(self):
         self.assertEqual(build_echo_response("hello"), b"Echo: hello\n")
 
+    def test_handle_payload_filters_empty_messages(self):
+        self.assertIsNone(handle_payload(b" \r\n"))
+        self.assertEqual(handle_payload(" ping ".encode()), b"Echo: ping\n")
+
     def test_normalize_channel_accepts_rfcomm_range(self):
         self.assertEqual(normalize_channel("1"), 1)
         self.assertEqual(normalize_channel("30"), 30)
@@ -23,6 +29,18 @@ class ProtocolTest(unittest.TestCase):
             normalize_channel("0")
         with self.assertRaises(ValueError):
             normalize_channel("31")
+
+    def test_cli_defaults_to_rfcomm_mode_and_default_channel(self):
+        args = build_parser().parse_args([])
+
+        self.assertEqual(args.mode, "rfcomm")
+        self.assertEqual(args.channel, DEFAULT_CHANNEL)
+
+    def test_cli_accepts_explicit_rfcomm_mode_and_channel(self):
+        args = build_parser().parse_args(["--mode", "rfcomm", "--channel", "4"])
+
+        self.assertEqual(args.mode, "rfcomm")
+        self.assertEqual(args.channel, 4)
 
 
 if __name__ == "__main__":
