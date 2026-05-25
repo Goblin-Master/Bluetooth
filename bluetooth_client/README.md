@@ -1,6 +1,6 @@
 # bluetooth_client
 
-Android Flutter client for Bluetooth Classic RFCOMM testing.
+Android Flutter client for Bluetooth Classic RFCOMM and BLE GATT testing.
 
 Run from WSL:
 
@@ -9,4 +9,22 @@ flutter pub get
 flutter run -d 192.168.2.181:40273
 ```
 
-The app lists already paired Bluetooth devices. Pair the phone with the Windows PC before using the connect button.
+Tabs:
+
+- `RFCOMM`: lists already paired Bluetooth devices. Pair the phone with the Windows PC first, then match the channel with `bt-server`.
+- `BLE`: scans for `BluetoothTestBridge`, connects to the fixed bless GATT service, writes text, and shows echo notifications.
+
+BLE UUIDs:
+
+```text
+Service:        12345678-1234-5678-1234-56789abcdef0
+Characteristic: 12345678-1234-5678-1234-56789abcdef1
+```
+
+Verify locally:
+
+```bash
+flutter test
+flutter analyze
+flutter build apk --debug
+```

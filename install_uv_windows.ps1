@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-Installs uv for the Windows RFCOMM Python server.
+Installs uv for the Windows Bluetooth Python server.
 
 Usage:
   powershell -ExecutionPolicy Bypass -File .\install_uv_windows.ps1
