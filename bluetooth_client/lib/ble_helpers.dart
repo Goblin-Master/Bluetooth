@@ -1,6 +1,21 @@
-const defaultBleBridgeName = 'BluetoothTestBridge';
 const bleBridgeServiceUuid = '12345678-1234-5678-1234-56789abcdef0';
 const bleBridgeCharacteristicUuid = '12345678-1234-5678-1234-56789abcdef1';
+const List<String> defaultBleScanServiceFilters = [];
+
+enum BleWriteMode { withResponse, withoutResponse, unsupported }
+
+BleWriteMode selectBleWriteMode({
+  required bool canWrite,
+  required bool canWriteWithoutResponse,
+}) {
+  if (canWrite) {
+    return BleWriteMode.withResponse;
+  }
+  if (canWriteWithoutResponse) {
+    return BleWriteMode.withoutResponse;
+  }
+  return BleWriteMode.unsupported;
+}
 
 class BleDeviceInfo {
   const BleDeviceInfo({
@@ -15,8 +30,7 @@ class BleDeviceInfo {
   final int rssi;
   final bool advertisesBridgeService;
 
-  bool get isBridge =>
-      advertisesBridgeService || name.trim() == defaultBleBridgeName;
+  bool get isBridge => advertisesBridgeService;
   bool get hasUsableName => name.trim().isNotEmpty && name.trim() != 'Unknown';
 
   @override

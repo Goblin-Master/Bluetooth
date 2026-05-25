@@ -1,10 +1,11 @@
 import unittest
 from unittest.mock import patch
+from contextlib import redirect_stderr
+import io
 
 from bluetooth_server.ble_server import (
     BLE_CHARACTERISTIC_UUID,
     BLE_SERVICE_UUID,
-    DEFAULT_BLE_NAME,
 )
 from bluetooth_server.cli import build_parser
 from bluetooth_server.protocol import build_echo_response, decode_message, handle_payload
@@ -51,17 +52,20 @@ class ProtocolTest(unittest.TestCase):
     def test_cli_accepts_ble_and_both_modes(self):
         ble_args = build_parser().parse_args(["--mode", "ble"])
         both_args = build_parser().parse_args(
-            ["--mode", "both", "--channel", "5", "--ble-name", "Bridge"],
+            ["--mode", "both", "--channel", "5"],
         )
 
         self.assertEqual(ble_args.mode, "ble")
-        self.assertEqual(ble_args.ble_name, DEFAULT_BLE_NAME)
         self.assertEqual(both_args.mode, "both")
         self.assertEqual(both_args.channel, 5)
-        self.assertEqual(both_args.ble_name, "Bridge")
+
+    def test_cli_rejects_ble_name_option(self):
+        stderr = io.StringIO()
+        with self.assertRaises(SystemExit):
+            with redirect_stderr(stderr):
+                build_parser().parse_args(["--mode", "ble", "--ble-name", "Bridge"])
 
     def test_ble_gatt_uses_fixed_bridge_uuids(self):
-        self.assertEqual(DEFAULT_BLE_NAME, "BluetoothTestBridge")
         self.assertEqual(BLE_SERVICE_UUID, "12345678-1234-5678-1234-56789abcdef0")
         self.assertEqual(
             BLE_CHARACTERISTIC_UUID,
@@ -81,7 +85,7 @@ class ProtocolTest(unittest.TestCase):
         from bluetooth_server.cli import main
 
         with patch("bluetooth_server.cli.asyncio.run") as run:
-            result = main(["--mode", "ble", "--ble-name", "Bridge"])
+            result = main(["--mode", "ble"])
 
         self.assertEqual(result, 0)
         coroutine = run.call_args.args[0]

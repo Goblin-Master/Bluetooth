@@ -14,7 +14,7 @@ BLE GATT:
 Flutter Android App -> BLE GATT write -> Windows Python WinRT Server
 ```
 
-两条链路现在都只做 echo 调试，不做 Wi-Fi 配网写入，也不接 Go 后端。RFCOMM 用系统配对设备和 channel；BLE GATT 用固定广播名 `BluetoothTestBridge`、固定 Service UUID 和 Characteristic UUID。
+两条链路现在都只做 echo 调试，不做 Wi-Fi 配网写入，也不接 Go 后端。RFCOMM 用系统配对设备和 channel；BLE GATT 用 Windows WinRT 暴露固定 Service UUID 和 Characteristic UUID，手机上看到的名称可能是电脑名或无名设备。
 
 ## 目录结构
 
@@ -100,7 +100,7 @@ uv run bt-server --mode ble
 Both:
 
 ```powershell
-uv run bt-server --mode both --channel 4 --ble-name BluetoothTestBridge
+uv run bt-server --mode both --channel 4
 ```
 
 默认 RFCOMM channel 是 `4`。如果被占用：
@@ -134,10 +134,10 @@ App 内 BLE GATT 操作：
 
 1. Windows PowerShell 启动 `uv run bt-server --mode ble` 或 `--mode both`。
 2. Flutter App 切到 `BLE` tab。
-3. 点击“扫描”，默认只显示 `BluetoothTestBridge`。
+3. 点击“扫描”，默认只显示固定 BLE 服务；打开“显示全部”才会显示其它有名称设备。
 4. 选择设备，点击“连接 BLE”。
 5. 输入文本并发送。
-6. 下方详情区查看固定 UUID、MTU、service 数量、最近回包和完整错误。
+6. 下方详情区查看固定 UUID、特征属性、MTU、service 数量、最近回包和完整错误。
 
 ## 测试
 

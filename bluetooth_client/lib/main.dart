@@ -112,6 +112,7 @@ abstract class BleController extends ChangeNotifier {
   int? get mtu;
   int get serviceCount;
   String? get connectedAtText;
+  String? get characteristicPropertiesText;
 
   void setShowAllNamedDevices(bool value);
   Future<void> startScan();
@@ -139,6 +140,7 @@ class RealBleController extends BleController {
   String? _lastError;
   String? _lastReceivedText;
   String? _connectedAtText;
+  String? _characteristicPropertiesText;
 
   RealBleController() {
     _subscriptions.add(
@@ -198,6 +200,9 @@ class RealBleController extends BleController {
   String? get connectedAtText => _connectedAtText;
 
   @override
+  String? get characteristicPropertiesText => _characteristicPropertiesText;
+
+  @override
   void setShowAllNamedDevices(bool value) {
     _showAllNamedDevices = value;
     notifyListeners();
@@ -209,12 +214,13 @@ class RealBleController extends BleController {
       try {
         _lastError = null;
         _lastReceivedText = null;
+        _characteristicPropertiesText = null;
         await _ensureBleReady();
         _scanResults.clear();
         _selectedDevice = null;
         _statusText = '扫描中';
         await FlutterBluePlus.startScan(
-          withServices: [Guid(bleBridgeServiceUuid)],
+          withServices: defaultBleScanServiceFilters.map(Guid.new).toList(),
           timeout: const Duration(seconds: 10),
           continuousUpdates: true,
           androidUsesFineLocation: false,
@@ -285,6 +291,9 @@ class RealBleController extends BleController {
         if (_bridgeCharacteristic == null) {
           throw StateError('未发现固定 BLE GATT Characteristic。');
         }
+        _characteristicPropertiesText = _describeCharacteristicProperties(
+          _bridgeCharacteristic!,
+        );
 
         final notifyCharacteristic = _bridgeCharacteristic!;
         _subscriptions.add(
@@ -338,9 +347,17 @@ class RealBleController extends BleController {
 
     await _runBusy(() async {
       try {
+        final characteristic = _bridgeCharacteristic!;
+        final writeMode = _writeModeFor(characteristic);
+        if (writeMode == BleWriteMode.unsupported) {
+          throw StateError(
+            '当前 Characteristic 不支持写入。实际属性：'
+            '${_describeCharacteristicProperties(characteristic)}',
+          );
+        }
         await _bridgeCharacteristic!.write(
           utf8.encode(message.text),
-          withoutResponse: _shouldWriteWithoutResponse(_bridgeCharacteristic!),
+          withoutResponse: writeMode == BleWriteMode.withoutResponse,
         );
         _lastSentMessage = message;
         _lastError = null;
@@ -404,9 +421,31 @@ class RealBleController extends BleController {
     return null;
   }
 
-  bool _shouldWriteWithoutResponse(BluetoothCharacteristic characteristic) {
+  BleWriteMode _writeModeFor(BluetoothCharacteristic characteristic) {
     final properties = characteristic.properties;
-    return !properties.write && properties.writeWithoutResponse;
+    return selectBleWriteMode(
+      canWrite: properties.write,
+      canWriteWithoutResponse: properties.writeWithoutResponse,
+    );
+  }
+
+  String _describeCharacteristicProperties(
+    BluetoothCharacteristic characteristic,
+  ) {
+    final properties = characteristic.properties;
+    final labels = [
+      if (properties.read) 'read',
+      if (properties.write) 'write',
+      if (properties.writeWithoutResponse) 'writeWithoutResponse',
+      if (properties.notify) 'notify',
+      if (properties.indicate) 'indicate',
+      if (properties.broadcast) 'broadcast',
+      if (properties.authenticatedSignedWrites) 'authenticatedSignedWrites',
+      if (properties.extendedProperties) 'extendedProperties',
+      if (properties.notifyEncryptionRequired) 'notifyEncryptionRequired',
+      if (properties.indicateEncryptionRequired) 'indicateEncryptionRequired',
+    ];
+    return labels.isEmpty ? 'none' : labels.join(', ');
   }
 
   void _handleScanResults(List<ScanResult> results) {
@@ -893,7 +932,7 @@ class _BleDeviceList extends StatelessWidget {
                 Text(
                   controller.showAllNamedDevices
                       ? '还没有扫描到有名称设备'
-                      : '默认只显示 BluetoothTestBridge',
+                      : '默认只显示固定 BLE 服务',
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -1076,6 +1115,10 @@ class _BleDetailsPanel extends StatelessWidget {
       DetailRowData(label: '设备 ID', value: selected?.id ?? '-'),
       const DetailRowData(label: '服务 UUID', value: bleBridgeServiceUuid),
       const DetailRowData(label: '特征 UUID', value: bleBridgeCharacteristicUuid),
+      DetailRowData(
+        label: '特征属性',
+        value: controller.characteristicPropertiesText ?? '-',
+      ),
       DetailRowData(label: 'MTU', value: controller.mtu?.toString() ?? '-'),
       DetailRowData(label: 'Service 数量', value: '${controller.serviceCount}'),
       DetailRowData(label: '连接时间', value: controller.connectedAtText ?? '-'),

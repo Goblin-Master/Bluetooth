@@ -8,13 +8,12 @@ from uuid import UUID
 from bluetooth_server.protocol import build_echo_response, decode_message
 
 
-DEFAULT_BLE_NAME = "BluetoothTestBridge"
 BLE_SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0"
 BLE_CHARACTERISTIC_UUID = "12345678-1234-5678-1234-56789abcdef1"
 DEFAULT_BLE_VALUE = b"Ready\n"
 
 
-async def start_ble_server(ble_name: str = DEFAULT_BLE_NAME) -> None:
+async def start_ble_server() -> None:
     try:
         from winrt.windows.devices.bluetooth import BluetoothError  # noqa: PLC0415
         from winrt.windows.devices.bluetooth.genericattributeprofile import (  # noqa: PLC0415
@@ -110,7 +109,7 @@ async def start_ble_server(ble_name: str = DEFAULT_BLE_NAME) -> None:
 
     service_provider.start_advertising_with_parameters(adv_parameters)
 
-    print(f"BLE GATT server advertising as {ble_name}.")
+    print("BLE GATT server advertising fixed service UUID.")
     print(f"Service: {BLE_SERVICE_UUID}")
     print(f"Characteristic: {BLE_CHARACTERISTIC_UUID}")
     print("Press Ctrl+C to stop.")

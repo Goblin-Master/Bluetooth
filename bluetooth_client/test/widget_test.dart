@@ -123,8 +123,9 @@ void main() {
     bleController.setDevices([
       const BleDeviceInfo(
         id: 'AA:BB:CC:DD:EE:01',
-        name: 'BluetoothTestBridge',
+        name: 'Windows PC',
         rssi: -35,
+        advertisesBridgeService: true,
       ),
       const BleDeviceInfo(id: 'AA:BB:CC:DD:EE:02', name: 'Sensor', rssi: -20),
     ]);
@@ -140,7 +141,7 @@ void main() {
 
     await tester.tap(find.text('扫描'));
     await tester.pump();
-    expect(find.text('BluetoothTestBridge'), findsOneWidget);
+    expect(find.text('Windows PC'), findsOneWidget);
     expect(find.textContaining('-35 dBm'), findsOneWidget);
     expect(find.text('Sensor'), findsNothing);
 
@@ -148,7 +149,7 @@ void main() {
     await tester.pump();
     expect(find.text('Sensor'), findsOneWidget);
 
-    await tester.tap(find.text('BluetoothTestBridge'));
+    await tester.tap(find.text('Windows PC'));
     await tester.pump();
     expect(find.textContaining('已选择'), findsWidgets);
 
@@ -156,6 +157,7 @@ void main() {
     await tester.pump();
     expect(find.text('断开 BLE'), findsOneWidget);
     expect(find.textContaining(bleBridgeServiceUuid), findsOneWidget);
+    expect(find.textContaining('writeWithoutResponse'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const ValueKey('ble-message-input')),
@@ -298,6 +300,7 @@ class FakeBleController extends BleController {
   int? _mtu;
   int _serviceCount = 0;
   String? _connectedAtText;
+  String? _characteristicPropertiesText;
 
   final List<String> sentMessages = [];
 
@@ -347,6 +350,9 @@ class FakeBleController extends BleController {
   String? get connectedAtText => _connectedAtText;
 
   @override
+  String? get characteristicPropertiesText => _characteristicPropertiesText;
+
+  @override
   void setShowAllNamedDevices(bool value) {
     _showAllNamedDevices = value;
     notifyListeners();
@@ -385,6 +391,7 @@ class FakeBleController extends BleController {
     _mtu = 512;
     _serviceCount = 1;
     _connectedAtText = '12:00:00';
+    _characteristicPropertiesText = 'read, writeWithoutResponse, notify';
     _statusText = '已连接 ${_selectedDevice!.name}';
     notifyListeners();
   }
@@ -392,6 +399,7 @@ class FakeBleController extends BleController {
   @override
   Future<void> disconnect() async {
     _isConnected = false;
+    _characteristicPropertiesText = null;
     _statusText = '已断开';
     notifyListeners();
   }
