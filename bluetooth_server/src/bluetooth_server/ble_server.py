@@ -53,6 +53,7 @@ async def start_ble_server(ble_name: str = DEFAULT_BLE_NAME) -> None:
     char_parameters.characteristic_properties = (
         GattCharacteristicProperties.READ
         | GattCharacteristicProperties.WRITE
+        | GattCharacteristicProperties.WRITE_WITHOUT_RESPONSE
         | GattCharacteristicProperties.NOTIFY
     )
     char_parameters.read_protection_level = GattProtectionLevel.PLAIN

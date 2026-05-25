@@ -338,7 +338,10 @@ class RealBleController extends BleController {
 
     await _runBusy(() async {
       try {
-        await _bridgeCharacteristic!.write(utf8.encode(message.text));
+        await _bridgeCharacteristic!.write(
+          utf8.encode(message.text),
+          withoutResponse: _shouldWriteWithoutResponse(_bridgeCharacteristic!),
+        );
         _lastSentMessage = message;
         _lastError = null;
         _statusText = '已发送';
@@ -399,6 +402,11 @@ class RealBleController extends BleController {
       }
     }
     return null;
+  }
+
+  bool _shouldWriteWithoutResponse(BluetoothCharacteristic characteristic) {
+    final properties = characteristic.properties;
+    return !properties.write && properties.writeWithoutResponse;
   }
 
   void _handleScanResults(List<ScanResult> results) {
