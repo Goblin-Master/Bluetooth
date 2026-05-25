@@ -35,11 +35,12 @@ local.properties
 **/android/app/release/
 **/.gradle/
 
-# Go
-**/bin/
-*.test
-*.out
-coverage.out
+# Python
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+*.py[cod]
 
 # Generated logs and temporary files
 *.log

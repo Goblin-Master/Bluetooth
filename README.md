@@ -1,52 +1,115 @@
 # Bluetooth
 
-Flutter Android client + Go backend playground for BLE bridge testing.
+Flutter Android client + Windows Python Bluetooth Classic RFCOMM server.
 
 ## 目标
 
-这个项目用于验证一条 BLE 桥接链路：
+这个项目用于验证一条最小蓝牙通讯链路：
 
 ```text
-Flutter Android App -> BLE GATT Server on Windows -> Go HTTP backend
+Flutter Android App -> Bluetooth Classic RFCOMM -> Windows Python Server
 ```
 
-第一阶段先做 Android 真机上的 Flutter BLE 调试客户端：扫描附近 BLE 设备、选择目标设备、连接/断开、发现 GATT 服务，并向可写 Characteristic 发送测试消息。
-
-第二阶段在 Windows 上做 BLE GATT Server 桥接层：电脑暴露一个 BLE 服务，手机连接电脑后写入消息，Windows 桥接层收到写入事件，再转发给 Go 后端。
-
-Go 后端只负责 HTTP 接收、记录和联调验证，不直接操作 BLE。
+手机端不再做 BLE GATT 扫描。现在的流程是先在 Windows 设置里把手机和电脑完成蓝牙配对，然后 Flutter App 读取 Android 系统里的已配对设备，选择 Windows 电脑，建立 RFCOMM 连接并发送文本。Windows Python 服务端收到文本后打印，并返回 `Echo: ...`。
 
 ## 目录结构
 
 ```text
 .
-├── bluetooth_client/   # Flutter Android BLE client
-├── bluetooth_server/   # Go HTTP backend
+├── bluetooth_client/        # Flutter Android RFCOMM client
+├── bluetooth_server/        # Windows Python RFCOMM server, managed by uv
 ├── install_flutter_android_wsl.sh
-└── install_flutter_go_windows.ps1
+└── install_uv_windows.ps1
 ```
 
-## 客户端
+## WSL Flutter 环境
 
-`bluetooth_client` 是 Android 真机 BLE 调试客户端，当前能力：
+WSL 脚本只安装 Flutter、Android SDK、JDK 和必要 Linux 依赖：
 
-- 扫描附近 BLE 设备，默认隐藏未知设备，可手动显示未知设备。
-- 按 RSSI 从强到弱排序，显示设备名、设备 ID、RSSI、信号强度和是否可连接。
-- 选择设备后点击“连接蓝牙 / 断开蓝牙”。
-- 连接成功后发现 GATT services，并自动选择第一个可写 Characteristic。
-- 发送框会把输入内容按 UTF-8 写入 Characteristic。
-- 详情区显示连接状态、MTU、service 数量、可写 UUID、最近发送内容和错误信息。
+```bash
+chmod +x ./install_flutter_android_wsl.sh
+./install_flutter_android_wsl.sh
+```
 
-运行：
+如果要换安装目录：
+
+```bash
+FLUTTER_DIR=$HOME/tools/flutter ANDROID_SDK_ROOT=$HOME/Android/Sdk ./install_flutter_android_wsl.sh
+```
+
+默认启用国内镜像；如果要使用官方源：
+
+```bash
+NO_CHINA_MIRRORS=1 ./install_flutter_android_wsl.sh
+```
+
+安装后：
+
+```bash
+source ~/.bashrc
+flutter doctor --android-licenses
+adb devices
+flutter devices
+```
+
+你的真机无线调试设备如果出现两个入口，优先用明确 IP 的那个：
+
+```bash
+flutter run -d 192.168.2.181:40273
+```
+
+## Windows Python 环境
+
+Windows 上只需要安装 uv 和 Python：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install_uv_windows.ps1
+```
+
+然后在 Windows 设置里完成：
+
+```text
+Settings -> Bluetooth & devices -> Pair phone with this PC
+```
+
+## 启动 RFCOMM 服务端
+
+在 Windows PowerShell 里运行：
+
+```powershell
+cd bluetooth_server
+uv run bt-server
+```
+
+默认使用 RFCOMM channel 1。如果被占用：
+
+```powershell
+uv run bt-server --channel 2
+```
+
+注意：这个服务必须跑在 Windows Python 上，不要跑在 WSL 里。WSL 不能直接拿到 Windows 蓝牙控制器。
+
+## 启动 Flutter 客户端
+
+在 WSL 里运行：
 
 ```bash
 cd bluetooth_client
 flutter pub get
-flutter devices
-flutter run
+flutter run -d 192.168.2.181:40273
 ```
 
-测试与构建：
+App 内操作：
+
+1. 点击“刷新已配对设备”。
+2. 选择 Windows 电脑。
+3. 点击“连接”。
+4. 输入文本并点击发送。
+5. 下方详情区查看最近发送和 Windows 服务端回包。
+
+## 测试
+
+Flutter：
 
 ```bash
 cd bluetooth_client
@@ -55,102 +118,9 @@ flutter analyze
 flutter build apk --debug
 ```
 
-## 后端
-
-`bluetooth_server` 是给 Windows BLE 桥接层调用的 HTTP 服务。
-
-接口：
-
-- `GET /health`
-- `POST /ble/messages`
-- `GET /ble/messages`
-
-启动：
-
-```bash
-cd bluetooth_server
-go run .
-```
-
-默认监听 `:8080`，可以用 `ADDR` 改端口：
-
-```bash
-ADDR=:18080 go run .
-```
-
-发送一条测试消息：
-
-```bash
-curl -X POST http://localhost:8080/ble/messages \
-  -H 'Content-Type: application/json' \
-  -d '{"device_id":"pc-ble","device_name":"Windows Bridge","payload":"hello"}'
-```
-
-查看消息：
-
-```bash
-curl http://localhost:8080/ble/messages
-```
-
-测试：
-
-```bash
-cd bluetooth_server
-go test ./...
-```
-
-## Scripts
-
-Windows PowerShell:
+Python 服务端：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install_flutter_go_windows.ps1
-```
-
-WSL / Ubuntu:
-
-```bash
-chmod +x ./install_flutter_android_wsl.sh
-./install_flutter_android_wsl.sh
-```
-
-如果你想换安装目录，可以这样运行：
-
-```bash
-FLUTTER_DIR=$HOME/tools/flutter ANDROID_SDK_ROOT=$HOME/Android/Sdk ./install_flutter_android_wsl.sh
-```
-
-WSL 脚本默认安装 Flutter、Android SDK、Go 和必要系统依赖。默认启用国内镜像；如果要使用官方源：
-
-```bash
-NO_CHINA_MIRRORS=1 ./install_flutter_android_wsl.sh
-```
-
-## 完成安装后的下一步
-
-1. 重新加载 shell 环境：
-
-```bash
-source ~/.bashrc
-```
-
-2. 接受 Android license：
-
-```bash
-flutter doctor --android-licenses
-```
-
-3. 手机上打开：
-
-```text
-开发者选项 -> 无线调试
-```
-
-4. WSL 里配对并连接真机：
-
-```bash
-adb pair 手机IP:配对端口
-adb connect 手机IP:调试端口
-adb devices
-flutter devices
+cd bluetooth_server
+uv run python -m unittest discover tests
 ```

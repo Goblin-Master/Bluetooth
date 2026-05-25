@@ -1,0 +1,14 @@
+[project]
+name = "bluetooth-server"
+version = "0.1.0"
+description = "Windows Bluetooth Classic RFCOMM echo server for Flutter testing."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+bt-server = "bluetooth_server.bt_server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

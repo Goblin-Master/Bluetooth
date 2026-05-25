@@ -1,17 +1,12 @@
 # bluetooth_client
 
-A new Flutter project.
+Android Flutter client for Bluetooth Classic RFCOMM testing.
 
-## Getting Started
+Run from WSL:
 
-This project is a starting point for a Flutter application.
+```bash
+flutter pub get
+flutter run -d 192.168.2.181:40273
+```
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The app lists already paired Bluetooth devices. Pair the phone with the Windows PC before using the connect button.

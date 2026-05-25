@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# User-level Flutter + Android SDK + Go installer for WSL/Ubuntu.
+# User-level Flutter + Android SDK installer for WSL/Ubuntu.
 
 TOOLS_ROOT="${TOOLS_ROOT:-$HOME/development}"
 FLUTTER_DIR="${FLUTTER_DIR:-$TOOLS_ROOT/flutter}"
-GO_ROOT="${GO_ROOT:-$TOOLS_ROOT/go}"
 ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}"
 ANDROID_API_LEVEL="${ANDROID_API_LEVEL:-36}"
 ANDROID_BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-36.0.0}"
@@ -83,14 +82,6 @@ download_first() {
   return "$last_status"
 }
 
-detect_go_arch() {
-  case "$(uname -m)" in
-    x86_64 | amd64) printf 'amd64' ;;
-    aarch64 | arm64) printf 'arm64' ;;
-    *) die "Unsupported CPU architecture: $(uname -m)" ;;
-  esac
-}
-
 if is_true "$NO_CHINA_MIRRORS"; then
   USE_CHINA_MIRRORS=0
 else
@@ -99,13 +90,9 @@ fi
 
 if [ "$USE_CHINA_MIRRORS" -eq 1 ]; then
   FLUTTER_STORAGE_BASE_URL="https://storage.flutter-io.cn"
-  GO_RELEASE_JSON_URL="https://golang.google.cn/dl/?mode=json"
-  GO_DOWNLOAD_BASE_URL="https://mirrors.aliyun.com/golang"
   PUB_HOSTED_URL_VALUE="https://pub.flutter-io.cn"
 else
   FLUTTER_STORAGE_BASE_URL="https://storage.googleapis.com"
-  GO_RELEASE_JSON_URL="https://go.dev/dl/?mode=json"
-  GO_DOWNLOAD_BASE_URL="https://go.dev/dl"
   PUB_HOSTED_URL_VALUE=""
 fi
 
@@ -187,70 +174,6 @@ PY
   "$flutter_bin" --version
 }
 
-install_go() {
-  local go_bin="$GO_ROOT/bin/go"
-  if [ -x "$go_bin" ]; then
-    step "Go already exists"
-    "$go_bin" version
-    return
-  fi
-
-  if [ -e "$GO_ROOT" ]; then
-    die "Directory exists but is not a Go SDK: $GO_ROOT"
-  fi
-
-  step "Installing Go stable"
-  mkdir -p "$(dirname "$GO_ROOT")"
-
-  local tmp_dir
-  tmp_dir="$(make_temp_dir)"
-
-  local releases_json="$tmp_dir/go-releases.json"
-  download_first \
-    "$releases_json" \
-    "$GO_RELEASE_JSON_URL" \
-    "https://go.dev/dl/?mode=json" \
-    || die "Could not download Go release metadata."
-
-  local go_arch
-  go_arch="$(detect_go_arch)"
-
-  local filename
-  filename="$(python3 - "$releases_json" "$go_arch" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], "r", encoding="utf-8") as f:
-    releases = json.load(f)
-
-arch = sys.argv[2]
-for release in releases:
-    if not release.get("stable"):
-        continue
-    for item in release.get("files", []):
-        if item.get("os") == "linux" and item.get("arch") == arch and item.get("kind") == "archive":
-            print(item["filename"])
-            raise SystemExit(0)
-
-raise SystemExit(f"Go archive for linux/{arch} not found")
-PY
-)"
-
-  local go_archive="$tmp_dir/$filename"
-  download_first \
-    "$go_archive" \
-    "$GO_DOWNLOAD_BASE_URL/$filename" \
-    "https://golang.google.cn/dl/$filename" \
-    "https://go.dev/dl/$filename" \
-    || die "Could not download Go SDK."
-
-  tar -C "$tmp_dir" -xzf "$go_archive"
-  [ -d "$tmp_dir/go" ] || die "Unexpected Go archive layout."
-  mv "$tmp_dir/go" "$GO_ROOT"
-
-  "$go_bin" version
-}
-
 install_android_sdk() {
   local sdkmanager="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
   mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools" "$ANDROID_SDK_ROOT/platforms" "$ANDROID_SDK_ROOT/platform-tools"
@@ -304,11 +227,9 @@ write_shell_env() {
   local bashrc="$HOME/.bashrc"
 
   append_once "export FLUTTER_HOME=\"$FLUTTER_DIR\"" "$bashrc"
-  append_once "export GOROOT=\"$GO_ROOT\"" "$bashrc"
-  append_once 'export GOPATH="$HOME/go"' "$bashrc"
   append_once "export ANDROID_HOME=\"$ANDROID_SDK_ROOT\"" "$bashrc"
   append_once "export ANDROID_SDK_ROOT=\"$ANDROID_SDK_ROOT\"" "$bashrc"
-  append_once 'export PATH="$FLUTTER_HOME/bin:$GOROOT/bin:$GOPATH/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"' "$bashrc"
+  append_once 'export PATH="$FLUTTER_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"' "$bashrc"
 
   if [ "$USE_CHINA_MIRRORS" -eq 1 ]; then
     append_once "export PUB_HOSTED_URL=\"$PUB_HOSTED_URL_VALUE\"" "$bashrc"
@@ -316,11 +237,9 @@ write_shell_env() {
   fi
 
   export FLUTTER_HOME="$FLUTTER_DIR"
-  export GOROOT="$GO_ROOT"
-  export GOPATH="${GOPATH:-$HOME/go}"
   export ANDROID_HOME="$ANDROID_SDK_ROOT"
   export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
-  export PATH="$FLUTTER_HOME/bin:$GOROOT/bin:$GOPATH/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
+  export PATH="$FLUTTER_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
 
   if [ "$USE_CHINA_MIRRORS" -eq 1 ]; then
     export PUB_HOSTED_URL="$PUB_HOSTED_URL_VALUE"
@@ -341,19 +260,14 @@ fi
 
 install_apt_deps
 install_flutter
-install_go
 write_shell_env
 install_android_sdk
 
-step "Configuring Flutter and Go"
+step "Configuring Flutter"
 flutter config --android-sdk "$ANDROID_SDK_ROOT"
-if [ "$USE_CHINA_MIRRORS" -eq 1 ]; then
-  go env -w GOPROXY=https://goproxy.cn,direct
-fi
 flutter precache --android
 
 step "Final checks"
 flutter doctor
-go version
 
 printf '\nDone. See README.md for next steps.\n'
