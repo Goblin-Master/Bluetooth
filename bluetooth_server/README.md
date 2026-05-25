@@ -8,8 +8,8 @@ Run on Windows PowerShell after pairing the phone with the PC:
 uv run bt-server
 ```
 
-If channel 1 is busy:
+If channel 4 is busy:
 
 ```powershell
-uv run bt-server --channel 2
+uv run bt-server --channel 5
 ```

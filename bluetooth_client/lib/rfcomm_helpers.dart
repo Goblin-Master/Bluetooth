@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 const defaultSppUuid = '00001101-0000-1000-8000-00805F9B34FB';
-const defaultRfcommChannel = 1;
+const defaultRfcommChannel = 4;
 
 class PairedBluetoothDevice {
   const PairedBluetoothDevice({required this.address, required this.name});

@@ -324,7 +324,7 @@ class MainActivity : FlutterActivity() {
         private const val CONTROL_CHANNEL = "rfcomm_bridge/control"
         private const val EVENTS_CHANNEL = "rfcomm_bridge/events"
         private const val SPP_UUID = "00001101-0000-1000-8000-00805F9B34FB"
-        private const val DEFAULT_RFCOMM_CHANNEL = 1
+        private const val DEFAULT_RFCOMM_CHANNEL = 4
         private const val REQUEST_BLUETOOTH_CONNECT = 42
     }
 

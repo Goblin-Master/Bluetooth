@@ -81,10 +81,10 @@ cd bluetooth_server
 uv run bt-server
 ```
 
-默认使用 RFCOMM channel 1。如果被占用：
+默认使用 RFCOMM channel 4。如果被占用：
 
 ```powershell
-uv run bt-server --channel 2
+uv run bt-server --channel 5
 ```
 
 注意：这个服务必须跑在 Windows Python 上，不要跑在 WSL 里。WSL 不能直接拿到 Windows 蓝牙控制器。

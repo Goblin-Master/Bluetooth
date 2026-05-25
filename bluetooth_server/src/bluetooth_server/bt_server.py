@@ -7,7 +7,7 @@ from collections.abc import Sequence
 
 
 DEFAULT_HOST = "00:00:00:00:00:00"
-DEFAULT_CHANNEL = 1
+DEFAULT_CHANNEL = 4
 BUFFER_SIZE = 1024
 
 
