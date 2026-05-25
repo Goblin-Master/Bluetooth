@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform;
 
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
+import 'ble_helpers.dart';
 import 'rfcomm_helpers.dart';
 
 void main() {
@@ -12,9 +16,10 @@ void main() {
 }
 
 class BluetoothClientApp extends StatelessWidget {
-  const BluetoothClientApp({super.key, this.controller});
+  const BluetoothClientApp({super.key, this.controller, this.bleController});
 
   final RfcommController? controller;
+  final BleController? bleController;
 
   @override
   Widget build(BuildContext context) {
@@ -31,15 +36,21 @@ class BluetoothClientApp extends StatelessWidget {
       ),
       home: BluetoothClientHome(
         rfcommController: controller ?? RealRfcommController(),
+        bleController: bleController ?? RealBleController(),
       ),
     );
   }
 }
 
 class BluetoothClientHome extends StatelessWidget {
-  const BluetoothClientHome({super.key, required this.rfcommController});
+  const BluetoothClientHome({
+    super.key,
+    required this.rfcommController,
+    required this.bleController,
+  });
 
   final RfcommController rfcommController;
+  final BleController bleController;
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +70,7 @@ class BluetoothClientHome extends StatelessWidget {
           child: TabBarView(
             children: [
               RfcommDebugPage(controller: rfcommController),
-              const BlePlaceholderPage(),
+              BleGattDebugPage(controller: bleController),
             ],
           ),
         ),
@@ -85,6 +96,390 @@ abstract class RfcommController extends ChangeNotifier {
   Future<void> connectSelected();
   Future<void> disconnect();
   Future<void> sendMessage(String text);
+}
+
+abstract class BleController extends ChangeNotifier {
+  bool get isBusy;
+  bool get isScanning;
+  bool get isConnected;
+  bool get showAllNamedDevices;
+  String get statusText;
+  String? get lastError;
+  String? get lastReceivedText;
+  OutboundMessage? get lastSentMessage;
+  List<BleDeviceInfo> get devices;
+  BleDeviceInfo? get selectedDevice;
+  int? get mtu;
+  int get serviceCount;
+  String? get connectedAtText;
+
+  void setShowAllNamedDevices(bool value);
+  Future<void> startScan();
+  Future<void> stopScan();
+  Future<void> selectDevice(BleDeviceInfo device);
+  Future<void> connectSelected();
+  Future<void> disconnect();
+  Future<void> sendMessage(String text);
+}
+
+class RealBleController extends BleController {
+  final Map<String, _ScannedBleDevice> _scanResults = {};
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  BluetoothDevice? _connectedDevice;
+  BluetoothCharacteristic? _bridgeCharacteristic;
+  BleDeviceInfo? _selectedDevice;
+  OutboundMessage? _lastSentMessage;
+  bool _isBusy = false;
+  bool _isScanning = false;
+  bool _isConnected = false;
+  bool _showAllNamedDevices = false;
+  int? _mtu;
+  int _serviceCount = 0;
+  String _statusText = '就绪';
+  String? _lastError;
+  String? _lastReceivedText;
+  String? _connectedAtText;
+
+  RealBleController() {
+    _subscriptions.add(
+      FlutterBluePlus.scanResults.listen(
+        _handleScanResults,
+        onError: (Object error) => _setError('扫描失败', error),
+      ),
+    );
+    _subscriptions.add(
+      FlutterBluePlus.isScanning.listen((value) {
+        _isScanning = value;
+        notifyListeners();
+      }),
+    );
+  }
+
+  @override
+  bool get isBusy => _isBusy;
+
+  @override
+  bool get isScanning => _isScanning;
+
+  @override
+  bool get isConnected => _isConnected;
+
+  @override
+  bool get showAllNamedDevices => _showAllNamedDevices;
+
+  @override
+  String get statusText => _statusText;
+
+  @override
+  String? get lastError => _lastError;
+
+  @override
+  String? get lastReceivedText => _lastReceivedText;
+
+  @override
+  OutboundMessage? get lastSentMessage => _lastSentMessage;
+
+  @override
+  List<BleDeviceInfo> get devices => filterBleDevices(
+    _scanResults.values.map((entry) => entry.info),
+    showAllNamedDevices: _showAllNamedDevices,
+  );
+
+  @override
+  BleDeviceInfo? get selectedDevice => _selectedDevice;
+
+  @override
+  int? get mtu => _mtu;
+
+  @override
+  int get serviceCount => _serviceCount;
+
+  @override
+  String? get connectedAtText => _connectedAtText;
+
+  @override
+  void setShowAllNamedDevices(bool value) {
+    _showAllNamedDevices = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> startScan() async {
+    await _runBusy(() async {
+      try {
+        _lastError = null;
+        _lastReceivedText = null;
+        await _ensureBleReady();
+        _scanResults.clear();
+        _selectedDevice = null;
+        _statusText = '扫描中';
+        await FlutterBluePlus.startScan(
+          timeout: const Duration(seconds: 10),
+          continuousUpdates: true,
+          androidUsesFineLocation: false,
+          androidCheckLocationServices: false,
+        );
+      } catch (error) {
+        _setError('扫描失败', error);
+      }
+    });
+  }
+
+  @override
+  Future<void> stopScan() async {
+    await _runBusy(() async {
+      try {
+        await FlutterBluePlus.stopScan();
+        _isScanning = false;
+        _statusText = _scanResults.isEmpty ? '没有扫描到设备' : '已停止扫描';
+      } catch (error) {
+        _setError('停止扫描失败', error);
+      }
+    });
+  }
+
+  @override
+  Future<void> selectDevice(BleDeviceInfo device) async {
+    _selectedDevice = device;
+    _lastError = null;
+    _lastReceivedText = null;
+    _statusText = '已选择 ${device.name}';
+    notifyListeners();
+  }
+
+  @override
+  Future<void> connectSelected() async {
+    final selected = _selectedDevice;
+    if (selected == null) {
+      _lastError = '请先选择 BLE 设备。';
+      notifyListeners();
+      return;
+    }
+
+    await _runBusy(() async {
+      try {
+        await FlutterBluePlus.stopScan();
+        _isScanning = false;
+        _lastError = null;
+        _lastReceivedText = null;
+        _statusText = '正在连接 ${selected.name}';
+
+        final device = _scanResults[selected.id]?.device;
+        if (device == null) {
+          throw StateError('设备不在当前扫描结果里，请重新扫描。');
+        }
+
+        await device.connect(
+          license: License.free,
+          timeout: const Duration(seconds: 15),
+          mtu: 512,
+        );
+        _connectedDevice = device;
+        _isConnected = true;
+        _mtu = device.mtuNow;
+
+        final services = await device.discoverServices(timeout: 15);
+        _serviceCount = services.length;
+        _bridgeCharacteristic = _findBridgeCharacteristic(services);
+        if (_bridgeCharacteristic == null) {
+          throw StateError('未发现固定 BLE GATT Characteristic。');
+        }
+
+        final notifyCharacteristic = _bridgeCharacteristic!;
+        _subscriptions.add(
+          notifyCharacteristic.onValueReceived.listen(_handleNotification),
+        );
+        if (notifyCharacteristic.properties.notify ||
+            notifyCharacteristic.properties.indicate) {
+          await notifyCharacteristic.setNotifyValue(true);
+        }
+
+        _connectedAtText = _formatClockTime(DateTime.now());
+        _statusText = '已连接 ${selected.name}';
+      } catch (error) {
+        _isConnected = false;
+        _bridgeCharacteristic = null;
+        _setError('连接失败', error);
+      }
+    });
+  }
+
+  @override
+  Future<void> disconnect() async {
+    await _runBusy(() async {
+      try {
+        await _connectedDevice?.disconnect();
+        _isConnected = false;
+        _bridgeCharacteristic = null;
+        _statusText = '已断开';
+      } catch (error) {
+        _setError('断开失败', error);
+      }
+    });
+  }
+
+  @override
+  Future<void> sendMessage(String text) async {
+    if (!_isConnected || _bridgeCharacteristic == null) {
+      _lastError = '请先连接 BLE GATT 服务。';
+      notifyListeners();
+      return;
+    }
+
+    late final OutboundMessage message;
+    try {
+      message = OutboundMessage.fromInput(text);
+    } on ArgumentError {
+      _lastError = '请先输入要发送的消息。';
+      notifyListeners();
+      return;
+    }
+
+    await _runBusy(() async {
+      try {
+        await _bridgeCharacteristic!.write(utf8.encode(message.text));
+        _lastSentMessage = message;
+        _lastError = null;
+        _statusText = '已发送';
+      } catch (error) {
+        _setError('发送失败', error);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final subscription in _subscriptions) {
+      subscription.cancel();
+    }
+    super.dispose();
+  }
+
+  Future<void> _ensureBleReady() async {
+    if (kIsWeb || !Platform.isAndroid) {
+      throw StateError('BLE 调试只支持 Android 真机。');
+    }
+
+    final permissions = await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+    ].request();
+    final denied = permissions.entries
+        .where((entry) => !entry.value.isGranted)
+        .map((entry) => entry.key.toString())
+        .join(', ');
+    if (denied.isNotEmpty) {
+      throw StateError('缺少 BLE 权限：$denied');
+    }
+
+    final supported = await FlutterBluePlus.isSupported;
+    if (!supported) {
+      throw StateError('当前手机不支持 BLE。');
+    }
+    final adapterState = await FlutterBluePlus.adapterState.first;
+    if (adapterState != BluetoothAdapterState.on) {
+      throw StateError('请先打开手机蓝牙。');
+    }
+  }
+
+  BluetoothCharacteristic? _findBridgeCharacteristic(
+    List<BluetoothService> services,
+  ) {
+    final serviceId = Guid(bleBridgeServiceUuid);
+    final characteristicId = Guid(bleBridgeCharacteristicUuid);
+    for (final service in services) {
+      if (service.uuid != serviceId) {
+        continue;
+      }
+      for (final characteristic in service.characteristics) {
+        if (characteristic.uuid == characteristicId) {
+          return characteristic;
+        }
+      }
+    }
+    return null;
+  }
+
+  void _handleScanResults(List<ScanResult> results) {
+    for (final result in results) {
+      final id = result.device.remoteId.toString();
+      final name = _bestBleName(result);
+      _scanResults[id] = _ScannedBleDevice(
+        device: result.device,
+        info: BleDeviceInfo(id: id, name: name, rssi: result.rssi),
+      );
+    }
+    if (_isScanning) {
+      _statusText = _scanResults.isEmpty
+          ? '扫描中'
+          : '扫描到 ${devices.length} 台可显示设备';
+    }
+    notifyListeners();
+  }
+
+  String _bestBleName(ScanResult result) {
+    final names = [
+      result.device.platformName,
+      result.advertisementData.advName,
+      result.device.advName,
+    ];
+    for (final name in names) {
+      final trimmed = name.trim();
+      if (trimmed.isNotEmpty) {
+        return trimmed;
+      }
+    }
+    return 'Unknown';
+  }
+
+  void _handleNotification(List<int> value) {
+    _lastReceivedText = utf8.decode(value, allowMalformed: true).trim();
+    _statusText = '收到回包';
+    notifyListeners();
+  }
+
+  Future<void> _runBusy(Future<void> Function() action) async {
+    _isBusy = true;
+    notifyListeners();
+    try {
+      await action();
+    } finally {
+      _isBusy = false;
+      notifyListeners();
+    }
+  }
+
+  void _setError(String status, Object error) {
+    _lastError = _friendlyBleError(error);
+    _statusText = status;
+    notifyListeners();
+  }
+
+  String _friendlyBleError(Object error) {
+    final text = error.toString();
+    if (text.contains('bluetoothScan') || text.contains('BLUETOOTH_SCAN')) {
+      return '需要附近设备权限。';
+    }
+    if (text.contains('bluetoothConnect') ||
+        text.contains('BLUETOOTH_CONNECT')) {
+      return '需要蓝牙连接权限。';
+    }
+    return text;
+  }
+
+  String _formatClockTime(DateTime time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    final second = time.second.toString().padLeft(2, '0');
+    return '$hour:$minute:$second';
+  }
+}
+
+class _ScannedBleDevice {
+  const _ScannedBleDevice({required this.device, required this.info});
+
+  final BluetoothDevice device;
+  final BleDeviceInfo info;
 }
 
 class RealRfcommController extends RfcommController {
@@ -373,37 +768,311 @@ class _RfcommDebugPageState extends State<RfcommDebugPage> {
   }
 }
 
-class BlePlaceholderPage extends StatelessWidget {
-  const BlePlaceholderPage({super.key});
+class BleGattDebugPage extends StatefulWidget {
+  const BleGattDebugPage({super.key, required this.controller});
+
+  final BleController controller;
+
+  @override
+  State<BleGattDebugPage> createState() => _BleGattDebugPageState();
+}
+
+class _BleGattDebugPageState extends State<BleGattDebugPage> {
+  final TextEditingController _messageController = TextEditingController();
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: const [
-        Expanded(
-          child: Center(
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) {
+        final controller = widget.controller;
+        return Column(
+          children: [
+            _BleStatusBar(controller: controller),
+            Expanded(child: _BleDeviceList(controller: controller)),
+            _BleMessageBar(
+              controller: controller,
+              messageController: _messageController,
+            ),
+            _BleDetailsPanel(controller: controller),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _BleStatusBar extends StatelessWidget {
+  const _BleStatusBar({required this.controller});
+
+  final BleController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: Row(
+        children: [
+          FilledButton.icon(
+            onPressed: controller.isBusy
+                ? null
+                : controller.isScanning
+                ? controller.stopScan
+                : controller.startScan,
+            icon: Icon(
+              controller.isScanning ? Icons.stop : Icons.bluetooth_searching,
+            ),
+            label: Text(controller.isScanning ? '停止扫描' : '扫描'),
+          ),
+          const SizedBox(width: 10),
+          FilterChip(
+            label: const Text('显示全部'),
+            selected: controller.showAllNamedDevices,
+            onSelected: controller.setShowAllNamedDevices,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              controller.statusText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BleDeviceList extends StatelessWidget {
+  const _BleDeviceList({required this.controller});
+
+  final BleController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final devices = controller.devices;
+    if (devices.isEmpty) {
+      return SingleChildScrollView(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.bluetooth_searching, size: 44),
-                SizedBox(height: 12),
-                Text('BLE GATT 调试', style: TextStyle(fontSize: 20)),
-                SizedBox(height: 4),
-                Text('待实现'),
+                const Icon(Icons.bluetooth_searching, size: 44),
+                const SizedBox(height: 12),
+                Text(
+                  'BLE GATT 调试',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  controller.showAllNamedDevices
+                      ? '还没有扫描到有名称设备'
+                      : '默认只显示 BluetoothTestBridge',
+                  textAlign: TextAlign.center,
+                ),
               ],
             ),
           ),
         ),
-        SharedDetailsPanel(
-          connected: false,
-          rows: [
-            DetailRowData(label: '状态', value: '待实现'),
-            DetailRowData(label: '服务 UUID', value: '-'),
-            DetailRowData(label: '特征 UUID', value: '-'),
-          ],
-        ),
-      ],
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      itemCount: devices.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final device = devices[index];
+        return _BleDeviceTile(
+          device: device,
+          selected: controller.selectedDevice?.id == device.id,
+          connected:
+              controller.isConnected &&
+              controller.selectedDevice?.id == device.id,
+          onTap: () => controller.selectDevice(device),
+        );
+      },
     );
+  }
+}
+
+class _BleDeviceTile extends StatelessWidget {
+  const _BleDeviceTile({
+    required this.device,
+    required this.selected,
+    required this.connected,
+    required this.onTap,
+  });
+
+  final BleDeviceInfo device;
+  final bool selected;
+  final bool connected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? colorScheme.primaryContainer : Colors.white,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? colorScheme.primary
+                      : const Color(0xFFE7EFEF),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  connected ? Icons.link : Icons.bluetooth,
+                  color: selected ? colorScheme.onPrimary : colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      device.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      device.id,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${device.rssi} dBm',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BleMessageBar extends StatelessWidget {
+  const _BleMessageBar({
+    required this.controller,
+    required this.messageController,
+  });
+
+  final BleController controller;
+  final TextEditingController messageController;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = controller.selectedDevice;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xFFE0E6E6))),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              key: const ValueKey('ble-message-input'),
+              controller: messageController,
+              minLines: 1,
+              maxLines: 1,
+              textInputAction: TextInputAction.send,
+              onSubmitted: controller.isConnected
+                  ? controller.sendMessage
+                  : null,
+              decoration: InputDecoration(
+                isDense: true,
+                prefixIcon: const Icon(Icons.edit_note),
+                hintText: selected == null ? '先选择 BLE 设备' : '输入消息',
+                border: const OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(8)),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filled(
+            key: const ValueKey('ble-send-button'),
+            tooltip: controller.isConnected ? '发送' : '请先连接',
+            onPressed: controller.isBusy
+                ? null
+                : () => controller.sendMessage(messageController.text),
+            icon: const Icon(Icons.send),
+          ),
+          const SizedBox(width: 8),
+          FilledButton.icon(
+            onPressed: selected == null || controller.isBusy
+                ? null
+                : controller.isConnected
+                ? controller.disconnect
+                : controller.connectSelected,
+            icon: Icon(controller.isConnected ? Icons.link_off : Icons.link),
+            label: Text(controller.isConnected ? '断开 BLE' : '连接 BLE'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BleDetailsPanel extends StatelessWidget {
+  const _BleDetailsPanel({required this.controller});
+
+  final BleController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = controller.selectedDevice;
+    final sent = controller.lastSentMessage;
+    final rows = [
+      DetailRowData(label: '状态', value: controller.statusText),
+      DetailRowData(label: '选中设备', value: selected?.name ?? '无'),
+      DetailRowData(label: '设备 ID', value: selected?.id ?? '-'),
+      const DetailRowData(label: '服务 UUID', value: bleBridgeServiceUuid),
+      const DetailRowData(label: '特征 UUID', value: bleBridgeCharacteristicUuid),
+      DetailRowData(label: 'MTU', value: controller.mtu?.toString() ?? '-'),
+      DetailRowData(label: 'Service 数量', value: '${controller.serviceCount}'),
+      DetailRowData(label: '连接时间', value: controller.connectedAtText ?? '-'),
+      DetailRowData(
+        label: '最近发送',
+        value: sent == null ? '-' : '"${sent.text}" (${sent.byteLength} bytes)',
+      ),
+      DetailRowData(label: '最近回包', value: controller.lastReceivedText ?? '-'),
+      if (controller.lastError != null)
+        DetailRowData(label: '错误', value: controller.lastError!),
+    ];
+
+    return SharedDetailsPanel(connected: controller.isConnected, rows: rows);
   }
 }
 
@@ -706,7 +1375,7 @@ class SharedDetailsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(maxHeight: 260),
+      constraints: const BoxConstraints(maxHeight: 220),
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
       decoration: const BoxDecoration(color: Color(0xFF112624)),
       child: DefaultTextStyle(

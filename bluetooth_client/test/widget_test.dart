@@ -1,4 +1,5 @@
 import 'package:bluetooth_client/main.dart';
+import 'package:bluetooth_client/ble_helpers.dart';
 import 'package:bluetooth_client/rfcomm_helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -99,14 +100,75 @@ void main() {
   });
 
   testWidgets('shows BLE placeholder tab', (tester) async {
-    final controller = FakeRfcommController();
+    final bleController = FakeBleController();
 
-    await tester.pumpWidget(BluetoothClientApp(controller: controller));
+    await tester.pumpWidget(
+      BluetoothClientApp(
+        controller: FakeRfcommController(),
+        bleController: bleController,
+      ),
+    );
     await tester.tap(find.text('BLE'));
     await tester.pumpAndSettle();
 
     expect(find.text('BLE GATT 调试'), findsOneWidget);
-    expect(find.text('待实现'), findsWidgets);
+    expect(find.text('扫描'), findsOneWidget);
+    expect(find.text('BluetoothTestBridge'), findsNothing);
+  });
+
+  testWidgets('BLE tab scans, selects, connects, sends, and disconnects', (
+    tester,
+  ) async {
+    final bleController = FakeBleController();
+    bleController.setDevices([
+      const BleDeviceInfo(
+        id: 'AA:BB:CC:DD:EE:01',
+        name: 'BluetoothTestBridge',
+        rssi: -35,
+      ),
+      const BleDeviceInfo(id: 'AA:BB:CC:DD:EE:02', name: 'Sensor', rssi: -20),
+    ]);
+
+    await tester.pumpWidget(
+      BluetoothClientApp(
+        controller: FakeRfcommController(),
+        bleController: bleController,
+      ),
+    );
+    await tester.tap(find.text('BLE'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('扫描'));
+    await tester.pump();
+    expect(find.text('BluetoothTestBridge'), findsOneWidget);
+    expect(find.textContaining('-35 dBm'), findsOneWidget);
+    expect(find.text('Sensor'), findsNothing);
+
+    await tester.tap(find.text('显示全部'));
+    await tester.pump();
+    expect(find.text('Sensor'), findsOneWidget);
+
+    await tester.tap(find.text('BluetoothTestBridge'));
+    await tester.pump();
+    expect(find.textContaining('已选择'), findsWidgets);
+
+    await tester.tap(find.text('连接 BLE'));
+    await tester.pump();
+    expect(find.text('断开 BLE'), findsOneWidget);
+    expect(find.textContaining(bleBridgeServiceUuid), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('ble-message-input')),
+      'hello ble',
+    );
+    await tester.tap(find.byKey(const ValueKey('ble-send-button')));
+    await tester.pump();
+    expect(bleController.sentMessages, ['hello ble']);
+    expect(find.textContaining('Echo: hello ble'), findsOneWidget);
+
+    await tester.tap(find.text('断开 BLE'));
+    await tester.pump();
+    expect(find.text('连接 BLE'), findsOneWidget);
   });
 }
 
@@ -214,6 +276,128 @@ class FakeRfcommController extends RfcommController {
       notifyListeners();
       return;
     }
+    _lastSentMessage = OutboundMessage.fromInput(text);
+    sentMessages.add(_lastSentMessage!.text);
+    _lastReceivedText = 'Echo: ${_lastSentMessage!.text}';
+    _statusText = '已发送';
+    notifyListeners();
+  }
+}
+
+class FakeBleController extends BleController {
+  final bool _isBusy = false;
+  bool _isScanning = false;
+  bool _isConnected = false;
+  bool _showAllNamedDevices = false;
+  String _statusText = '就绪';
+  String? _lastError;
+  String? _lastReceivedText;
+  OutboundMessage? _lastSentMessage;
+  BleDeviceInfo? _selectedDevice;
+  List<BleDeviceInfo> _devices = [];
+  int? _mtu;
+  int _serviceCount = 0;
+  String? _connectedAtText;
+
+  final List<String> sentMessages = [];
+
+  void setDevices(List<BleDeviceInfo> devices) {
+    _devices = devices;
+    notifyListeners();
+  }
+
+  @override
+  bool get isBusy => _isBusy;
+
+  @override
+  bool get isScanning => _isScanning;
+
+  @override
+  bool get isConnected => _isConnected;
+
+  @override
+  bool get showAllNamedDevices => _showAllNamedDevices;
+
+  @override
+  String get statusText => _statusText;
+
+  @override
+  String? get lastError => _lastError;
+
+  @override
+  String? get lastReceivedText => _lastReceivedText;
+
+  @override
+  OutboundMessage? get lastSentMessage => _lastSentMessage;
+
+  @override
+  BleDeviceInfo? get selectedDevice => _selectedDevice;
+
+  @override
+  List<BleDeviceInfo> get devices =>
+      filterBleDevices(_devices, showAllNamedDevices: _showAllNamedDevices);
+
+  @override
+  int? get mtu => _mtu;
+
+  @override
+  int get serviceCount => _serviceCount;
+
+  @override
+  String? get connectedAtText => _connectedAtText;
+
+  @override
+  void setShowAllNamedDevices(bool value) {
+    _showAllNamedDevices = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> startScan() async {
+    _isScanning = true;
+    _statusText = '扫描中';
+    notifyListeners();
+  }
+
+  @override
+  Future<void> stopScan() async {
+    _isScanning = false;
+    _statusText = '已停止扫描';
+    notifyListeners();
+  }
+
+  @override
+  Future<void> selectDevice(BleDeviceInfo device) async {
+    _selectedDevice = device;
+    _statusText = '已选择 ${device.name}';
+    notifyListeners();
+  }
+
+  @override
+  Future<void> connectSelected() async {
+    if (_selectedDevice == null) {
+      _lastError = '请先选择 BLE 设备。';
+      notifyListeners();
+      return;
+    }
+    _isConnected = true;
+    _isScanning = false;
+    _mtu = 512;
+    _serviceCount = 1;
+    _connectedAtText = '12:00:00';
+    _statusText = '已连接 ${_selectedDevice!.name}';
+    notifyListeners();
+  }
+
+  @override
+  Future<void> disconnect() async {
+    _isConnected = false;
+    _statusText = '已断开';
+    notifyListeners();
+  }
+
+  @override
+  Future<void> sendMessage(String text) async {
     _lastSentMessage = OutboundMessage.fromInput(text);
     sentMessages.add(_lastSentMessage!.text);
     _lastReceivedText = 'Echo: ${_lastSentMessage!.text}';

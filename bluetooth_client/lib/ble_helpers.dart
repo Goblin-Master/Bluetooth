@@ -1,0 +1,57 @@
+const defaultBleBridgeName = 'BluetoothTestBridge';
+const bleBridgeServiceUuid = '12345678-1234-5678-1234-56789abcdef0';
+const bleBridgeCharacteristicUuid = '12345678-1234-5678-1234-56789abcdef1';
+
+class BleDeviceInfo {
+  const BleDeviceInfo({
+    required this.id,
+    required this.name,
+    required this.rssi,
+  });
+
+  final String id;
+  final String name;
+  final int rssi;
+
+  bool get isBridge => name.trim() == defaultBleBridgeName;
+  bool get hasUsableName => name.trim().isNotEmpty && name.trim() != 'Unknown';
+
+  @override
+  bool operator ==(Object other) {
+    return other is BleDeviceInfo &&
+        other.id == id &&
+        other.name == name &&
+        other.rssi == rssi;
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, rssi);
+}
+
+List<BleDeviceInfo> filterBleDevices(
+  Iterable<BleDeviceInfo> devices, {
+  required bool showAllNamedDevices,
+}) {
+  final filtered = devices.where((device) {
+    if (device.isBridge) {
+      return true;
+    }
+    return showAllNamedDevices && device.hasUsableName;
+  }).toList()..sort(compareBleDevices);
+  return filtered;
+}
+
+int compareBleDevices(BleDeviceInfo a, BleDeviceInfo b) {
+  if (a.isBridge != b.isBridge) {
+    return a.isBridge ? -1 : 1;
+  }
+  final byRssi = b.rssi.compareTo(a.rssi);
+  if (byRssi != 0) {
+    return byRssi;
+  }
+  final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  if (byName != 0) {
+    return byName;
+  }
+  return a.id.compareTo(b.id);
+}
