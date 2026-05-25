@@ -1,0 +1,52 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+local.properties
+*.keystore
+*.jks
+
+# Flutter and Dart
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/build/
+**/coverage/
+
+# Android and Gradle
+**/android/.gradle/
+**/android/captures/
+**/android/local.properties
+**/android/key.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+**/.gradle/
+
+# Go
+**/bin/
+*.test
+*.out
+coverage.out
+
+# Generated logs and temporary files
+*.log
+tmp/
+temp/
+
+# Optional local SDK install directories
+development/
+devtools/
+Android/Sdk/
