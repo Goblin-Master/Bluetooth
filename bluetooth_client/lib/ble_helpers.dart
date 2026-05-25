@@ -70,7 +70,7 @@ bool shouldShowScanResult(ScanResult result, {required bool showUnknown}) {
   }
 
   final name = displayDeviceName(result);
-  return name != '未知设备' || result.advertisementData.connectable;
+  return name != '未知设备';
 }
 
 String signalLabel(int rssi) {
