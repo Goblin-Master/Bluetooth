@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 from datetime import datetime
+from uuid import UUID
 
 from bluetooth_server.protocol import build_echo_response, decode_message
 
@@ -15,64 +16,142 @@ DEFAULT_BLE_VALUE = b"Ready\n"
 
 async def start_ble_server(ble_name: str = DEFAULT_BLE_NAME) -> None:
     try:
-        from bless import (  # noqa: PLC0415
-            BlessServer,
-            GATTAttributePermissions,
-            GATTCharacteristicProperties,
+        from winrt.windows.devices.bluetooth import BluetoothError  # noqa: PLC0415
+        from winrt.windows.devices.bluetooth.genericattributeprofile import (  # noqa: PLC0415
+            GattCharacteristicProperties,
+            GattLocalCharacteristicParameters,
+            GattProtectionLevel,
+            GattServiceProvider,
+            GattServiceProviderAdvertisementStatus,
+            GattServiceProviderAdvertisingParameters,
+            GattWriteOption,
+        )
+        from winrt.windows.storage.streams import (  # noqa: PLC0415
+            DataReader,
+            DataWriter,
         )
     except ImportError as exc:
         raise RuntimeError(
-            "bless is not installed correctly. Run `uv sync` on Windows.",
+            "Windows WinRT Bluetooth packages are not installed. Run `uv sync` on Windows.",
         ) from exc
 
-    server = BlessServer(name=ble_name)
-    state = _BleState(server)
+    def make_buffer(value: bytes | bytearray):
+        writer = DataWriter()
+        writer.write_bytes(bytes(value))
+        return writer.detach_buffer()
 
-    server.read_request_func = state.read_request
-    server.write_request_func = state.write_request
+    state = _BleState(make_buffer)
 
-    await server.add_new_service(BLE_SERVICE_UUID)
-    await server.add_new_characteristic(
-        BLE_SERVICE_UUID,
-        BLE_CHARACTERISTIC_UUID,
-        (
-            GATTCharacteristicProperties.read
-            | GATTCharacteristicProperties.write
-            | GATTCharacteristicProperties.notify
-        ),
-        bytearray(DEFAULT_BLE_VALUE),
-        GATTAttributePermissions.readable | GATTAttributePermissions.writeable,
+    service_result = await GattServiceProvider.create_async(UUID(BLE_SERVICE_UUID))
+    if service_result.error != BluetoothError.SUCCESS:
+        raise RuntimeError(f"failed to create BLE GATT service: {service_result.error}")
+    service_provider = service_result.service_provider
+    if service_provider is None or service_provider.service is None:
+        raise RuntimeError("failed to create BLE GATT service provider")
+
+    char_parameters = GattLocalCharacteristicParameters()
+    char_parameters.characteristic_properties = (
+        GattCharacteristicProperties.READ
+        | GattCharacteristicProperties.WRITE
+        | GattCharacteristicProperties.NOTIFY
     )
+    char_parameters.read_protection_level = GattProtectionLevel.PLAIN
+    char_parameters.write_protection_level = GattProtectionLevel.PLAIN
+    char_parameters.static_value = make_buffer(DEFAULT_BLE_VALUE)
+    char_parameters.user_description = "Bluetooth test echo"
 
-    await server.start()
+    char_result = await service_provider.service.create_characteristic_async(
+        UUID(BLE_CHARACTERISTIC_UUID),
+        char_parameters,
+    )
+    if char_result.error != BluetoothError.SUCCESS:
+        raise RuntimeError(f"failed to create BLE GATT characteristic: {char_result.error}")
+    characteristic = char_result.characteristic
+    if characteristic is None:
+        raise RuntimeError("failed to create BLE GATT characteristic")
+
+    def read_characteristic(_sender, args) -> None:
+        deferral = args.get_deferral()
+
+        async def respond() -> None:
+            try:
+                request = await args.get_request_async()
+                request.respond_with_value(make_buffer(state.value))
+            finally:
+                deferral.complete()
+
+        asyncio.run_coroutine_threadsafe(respond(), state.loop)
+
+    def write_characteristic(_sender, args) -> None:
+        deferral = args.get_deferral()
+
+        async def respond() -> None:
+            try:
+                request = await args.get_request_async()
+                reader = DataReader.from_buffer(request.value)
+                value = bytearray()
+                for _ in range(reader.unconsumed_buffer_length):
+                    value.append(reader.read_byte())
+                state.receive(value, characteristic)
+                if request.option == GattWriteOption.WRITE_WITH_RESPONSE:
+                    request.respond()
+            finally:
+                deferral.complete()
+
+        asyncio.run_coroutine_threadsafe(respond(), state.loop)
+
+    characteristic.add_read_requested(read_characteristic)
+    characteristic.add_write_requested(write_characteristic)
+
+    adv_parameters = GattServiceProviderAdvertisingParameters()
+    adv_parameters.is_discoverable = True
+    adv_parameters.is_connectable = True
+
+    service_provider.start_advertising_with_parameters(adv_parameters)
+
     print(f"BLE GATT server advertising as {ble_name}.")
     print(f"Service: {BLE_SERVICE_UUID}")
     print(f"Characteristic: {BLE_CHARACTERISTIC_UUID}")
     print("Press Ctrl+C to stop.")
 
     try:
+        await _wait_for_advertising_start(
+            service_provider,
+            GattServiceProviderAdvertisementStatus,
+        )
         await asyncio.Event().wait()
     finally:
         with suppress(Exception):
-            await server.stop()
+            service_provider.stop_advertising()
         print("BLE GATT server stopped.")
 
 
+async def _wait_for_advertising_start(service_provider, status_type) -> None:
+    for _ in range(50):
+        if service_provider.advertisement_status in (
+            status_type.STARTED,
+            status_type.STARTED_WITHOUT_ALL_ADVERTISEMENT_DATA,
+        ):
+            return
+        await asyncio.sleep(0.1)
+    raise RuntimeError(
+        f"BLE GATT advertising did not start: {service_provider.advertisement_status}",
+    )
+
+
 class _BleState:
-    def __init__(self, server):
-        self._server = server
-        self._value = bytearray(DEFAULT_BLE_VALUE)
+    def __init__(self, make_buffer):
+        self.loop = asyncio.get_running_loop()
+        self.value = bytearray(DEFAULT_BLE_VALUE)
+        self._make_buffer = make_buffer
 
-    def read_request(self, characteristic) -> bytearray:
-        return bytearray(characteristic.value or self._value)
-
-    def write_request(self, characteristic, value: bytearray) -> None:
+    def receive(self, value: bytearray, characteristic) -> None:
         try:
             message = decode_message(bytes(value))
         except ValueError:
             return
 
         print(f"BLE received {datetime.now().isoformat(timespec='seconds')}: {message}")
-        self._value = bytearray(build_echo_response(message))
-        characteristic.value = self._value
-        self._server.update_value(BLE_SERVICE_UUID, BLE_CHARACTERISTIC_UUID)
+        self.value = bytearray(build_echo_response(message))
+        characteristic.static_value = self._make_buffer(self.value)
+        characteristic.notify_value_async(self._make_buffer(self.value))

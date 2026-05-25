@@ -11,7 +11,7 @@ RFCOMM:
 Flutter Android App -> Bluetooth Classic RFCOMM -> Windows Python Server
 
 BLE GATT:
-Flutter Android App -> BLE GATT write -> Windows Python bless Server
+Flutter Android App -> BLE GATT write -> Windows Python WinRT Server
 ```
 
 两条链路现在都只做 echo 调试，不做 Wi-Fi 配网写入，也不接 Go 后端。RFCOMM 用系统配对设备和 channel；BLE GATT 用固定广播名 `BluetoothTestBridge`、固定 Service UUID 和 Characteristic UUID。
@@ -21,7 +21,7 @@ Flutter Android App -> BLE GATT write -> Windows Python bless Server
 ```text
 .
 ├── bluetooth_client/        # Flutter Android RFCOMM + BLE GATT client
-├── bluetooth_server/        # Windows Python RFCOMM + bless BLE server, managed by uv
+├── bluetooth_server/        # Windows Python RFCOMM + WinRT BLE server, managed by uv
 ├── install_flutter_android_wsl.sh
 └── install_uv_windows.ps1
 ```

@@ -214,6 +214,7 @@ class RealBleController extends BleController {
         _selectedDevice = null;
         _statusText = '扫描中';
         await FlutterBluePlus.startScan(
+          withServices: [Guid(bleBridgeServiceUuid)],
           timeout: const Duration(seconds: 10),
           continuousUpdates: true,
           androidUsesFineLocation: false,
@@ -404,9 +405,16 @@ class RealBleController extends BleController {
     for (final result in results) {
       final id = result.device.remoteId.toString();
       final name = _bestBleName(result);
+      final advertisesBridgeService = result.advertisementData.serviceUuids
+          .contains(Guid(bleBridgeServiceUuid));
       _scanResults[id] = _ScannedBleDevice(
         device: result.device,
-        info: BleDeviceInfo(id: id, name: name, rssi: result.rssi),
+        info: BleDeviceInfo(
+          id: id,
+          name: name,
+          rssi: result.rssi,
+          advertisesBridgeService: advertisesBridgeService,
+        ),
       );
     }
     if (_isScanning) {

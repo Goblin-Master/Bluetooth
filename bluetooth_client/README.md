@@ -12,7 +12,7 @@ flutter run -d 192.168.2.181:40273
 Tabs:
 
 - `RFCOMM`: lists already paired Bluetooth devices. Pair the phone with the Windows PC first, then match the channel with `bt-server`.
-- `BLE`: scans for `BluetoothTestBridge`, connects to the fixed bless GATT service, writes text, and shows echo notifications.
+- `BLE`: scans for the fixed bridge GATT service, connects, writes text, and shows echo notifications.
 
 BLE UUIDs:
 

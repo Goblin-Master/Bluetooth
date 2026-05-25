@@ -25,6 +25,18 @@ void main() {
     ]);
   });
 
+  test('treats advertised bridge service as the BLE bridge', () {
+    const device = BleDeviceInfo(
+      id: '1',
+      name: 'Windows PC',
+      rssi: -50,
+      advertisesBridgeService: true,
+    );
+
+    expect(device.isBridge, isTrue);
+    expect(filterBleDevices([device], showAllNamedDevices: false), [device]);
+  });
+
   test('sorts BLE bridge first then by strongest RSSI', () {
     final devices = [
       const BleDeviceInfo(id: '1', name: 'Sensor', rssi: -20),

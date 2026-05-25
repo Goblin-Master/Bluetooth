@@ -18,7 +18,7 @@ RFCOMM uses Bluetooth Classic. Pair the phone with Windows first in system setti
 uv run bt-server --mode rfcomm --channel 4
 ```
 
-BLE GATT advertises as `BluetoothTestBridge` through bless:
+BLE GATT exposes the fixed bridge service UUID through Windows WinRT:
 
 ```powershell
 uv run bt-server --mode ble
@@ -44,7 +44,7 @@ The characteristic supports read, write, and notify. Writes are decoded as UTF-8
 - Run this on Windows Python, not WSL.
 - If RFCOMM channel 4 is busy, use `--channel 5` and set the same value in the app.
 - If BLE cannot advertise, confirm Windows Bluetooth is enabled and no other bridge process is already running.
-- `pysetupdi` is not a direct project dependency here; `bless` resolves the Windows packages it needs through `uv sync`.
+- The Flutter client scans for the fixed BLE service UUID, so the Windows device name shown in scan results may be your PC name instead of `BluetoothTestBridge`.
 
 ## Test
 

@@ -7,13 +7,16 @@ class BleDeviceInfo {
     required this.id,
     required this.name,
     required this.rssi,
+    this.advertisesBridgeService = false,
   });
 
   final String id;
   final String name;
   final int rssi;
+  final bool advertisesBridgeService;
 
-  bool get isBridge => name.trim() == defaultBleBridgeName;
+  bool get isBridge =>
+      advertisesBridgeService || name.trim() == defaultBleBridgeName;
   bool get hasUsableName => name.trim().isNotEmpty && name.trim() != 'Unknown';
 
   @override
@@ -21,11 +24,12 @@ class BleDeviceInfo {
     return other is BleDeviceInfo &&
         other.id == id &&
         other.name == name &&
-        other.rssi == rssi;
+        other.rssi == rssi &&
+        other.advertisesBridgeService == advertisesBridgeService;
   }
 
   @override
-  int get hashCode => Object.hash(id, name, rssi);
+  int get hashCode => Object.hash(id, name, rssi, advertisesBridgeService);
 }
 
 List<BleDeviceInfo> filterBleDevices(
