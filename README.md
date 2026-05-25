@@ -16,7 +16,7 @@ Flutter Android App -> BLE GATT Server on Windows -> Go HTTP backend
 
 Go 后端只负责 HTTP 接收、记录和联调验证，不直接操作 BLE。
 
-计划目录结构：
+## 目录结构
 
 ```text
 .
@@ -24,6 +24,79 @@ Go 后端只负责 HTTP 接收、记录和联调验证，不直接操作 BLE。
 ├── bluetooth_server/   # Go HTTP backend
 ├── install_flutter_android_wsl.sh
 └── install_flutter_go_windows.ps1
+```
+
+## 客户端
+
+`bluetooth_client` 是 Android 真机 BLE 调试客户端，当前能力：
+
+- 扫描附近 BLE 设备，默认隐藏未知设备，可手动显示未知设备。
+- 按 RSSI 从强到弱排序，显示设备名、设备 ID、RSSI、信号强度和是否可连接。
+- 选择设备后点击“连接蓝牙 / 断开蓝牙”。
+- 连接成功后发现 GATT services，并自动选择第一个可写 Characteristic。
+- 发送框会把输入内容按 UTF-8 写入 Characteristic。
+- 详情区显示连接状态、MTU、service 数量、可写 UUID、最近发送内容和错误信息。
+
+运行：
+
+```bash
+cd bluetooth_client
+flutter pub get
+flutter devices
+flutter run
+```
+
+测试与构建：
+
+```bash
+cd bluetooth_client
+flutter test
+flutter analyze
+flutter build apk --debug
+```
+
+## 后端
+
+`bluetooth_server` 是给 Windows BLE 桥接层调用的 HTTP 服务。
+
+接口：
+
+- `GET /health`
+- `POST /ble/messages`
+- `GET /ble/messages`
+
+启动：
+
+```bash
+cd bluetooth_server
+go run .
+```
+
+默认监听 `:8080`，可以用 `ADDR` 改端口：
+
+```bash
+ADDR=:18080 go run .
+```
+
+发送一条测试消息：
+
+```bash
+curl -X POST http://localhost:8080/ble/messages \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":"pc-ble","device_name":"Windows Bridge","payload":"hello"}'
+```
+
+查看消息：
+
+```bash
+curl http://localhost:8080/ble/messages
+```
+
+测试：
+
+```bash
+cd bluetooth_server
+go test ./...
 ```
 
 ## Scripts
