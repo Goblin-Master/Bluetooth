@@ -25,6 +25,9 @@ void main() {
 
     await tester.pumpWidget(BluetoothClientApp(controller: controller));
 
+    expect(controller.showUnknown, isFalse);
+    expect(find.byIcon(Icons.visibility_off), findsOneWidget);
+    expect(find.byIcon(Icons.visibility), findsNothing);
     expect(find.text('BLE 桥接调试'), findsOneWidget);
     expect(find.text('扫描'), findsOneWidget);
     expect(find.text('Windows Bridge'), findsOneWidget);
@@ -32,6 +35,23 @@ void main() {
     expect(find.text('Sensor'), findsOneWidget);
     expect(find.text('连接蓝牙'), findsOneWidget);
     expect(find.byIcon(Icons.send), findsOneWidget);
+  });
+
+  testWidgets('unknown toggle starts disabled and toggles on tap', (
+    tester,
+  ) async {
+    final controller = FakeBlePageController();
+
+    await tester.pumpWidget(BluetoothClientApp(controller: controller));
+
+    expect(controller.showUnknown, isFalse);
+    expect(find.byIcon(Icons.visibility_off), findsOneWidget);
+
+    await tester.tap(find.text('显示未知'));
+    await tester.pumpAndSettle();
+
+    expect(controller.showUnknown, isTrue);
+    expect(find.byIcon(Icons.visibility), findsOneWidget);
   });
 
   testWidgets('selects, connects, and sends a message', (tester) async {

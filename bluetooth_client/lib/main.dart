@@ -519,11 +519,9 @@ class _TopBar extends StatelessWidget {
             label: Text(controller.isScanning ? '停止' : '扫描'),
           ),
           const SizedBox(width: 10),
-          FilterChip(
-            selected: controller.showUnknown,
-            onSelected: (value) => controller.showUnknown = value,
-            label: const Text('显示未知'),
-            avatar: const Icon(Icons.visibility, size: 18),
+          _UnknownToggle(
+            enabled: controller.showUnknown,
+            onChanged: (value) => controller.showUnknown = value,
           ),
           const Spacer(),
           Flexible(
@@ -536,6 +534,67 @@ class _TopBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _UnknownToggle extends StatelessWidget {
+  const _UnknownToggle({required this.enabled, required this.onChanged});
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final backgroundColor = enabled
+        ? colorScheme.primary
+        : const Color(0xFFE3E8E8);
+    final foregroundColor = enabled
+        ? colorScheme.onPrimary
+        : const Color(0xFF586362);
+
+    return Semantics(
+      button: true,
+      toggled: enabled,
+      label: '显示未知设备',
+      child: Tooltip(
+        message: enabled ? '正在显示未知设备' : '未知设备已隐藏',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => onChanged(!enabled),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: enabled ? colorScheme.primary : const Color(0xFFC8D1D1),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  enabled ? Icons.visibility : Icons.visibility_off,
+                  size: 18,
+                  color: foregroundColor,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '显示未知',
+                  style: TextStyle(
+                    color: foregroundColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
