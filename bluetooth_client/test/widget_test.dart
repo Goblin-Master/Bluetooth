@@ -78,6 +78,23 @@ void main() {
 
     expect(find.textContaining('请先连接'), findsOneWidget);
   });
+
+  testWidgets('shows long error details without truncating them', (
+    tester,
+  ) async {
+    const longError =
+        'Need android.permission.BLUETOOTH_SCAN permission for android.content.AttributionSource@123';
+    final controller = FakeRfcommController()..setError(longError);
+
+    await tester.pumpWidget(BluetoothClientApp(controller: controller));
+
+    final errorText = tester.widget<SelectableText>(
+      find.byWidgetPredicate(
+        (widget) => widget is SelectableText && widget.data == longError,
+      ),
+    );
+    expect(errorText.maxLines, isNull);
+  });
 }
 
 class FakeRfcommController extends RfcommController {
@@ -96,6 +113,11 @@ class FakeRfcommController extends RfcommController {
 
   void setDevices(List<PairedBluetoothDevice> devices) {
     _devices = devices;
+    notifyListeners();
+  }
+
+  void setError(String error) {
+    _lastError = error;
     notifyListeners();
   }
 

@@ -157,7 +157,6 @@ class MainActivity : FlutterActivity() {
             try {
                 closeSocket()
                 val device = adapter.getRemoteDevice(address)
-                adapter.cancelDiscovery()
                 val nextSocket = connectWithFallback(device, uuid, channel)
                 socket = nextSocket
                 runOnUiThread {

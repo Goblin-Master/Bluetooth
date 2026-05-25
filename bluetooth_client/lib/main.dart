@@ -529,72 +529,76 @@ class _MessageBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final selected = controller.selectedDevice;
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFE0E6E6))),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: TextField(
-              key: const ValueKey('message-input'),
-              controller: messageController,
-              minLines: 1,
-              maxLines: 1,
-              textInputAction: TextInputAction.send,
-              onSubmitted: controller.isConnected
-                  ? controller.sendMessage
-                  : null,
-              decoration: InputDecoration(
-                isDense: true,
-                prefixIcon: const Icon(Icons.edit_note),
-                hintText: selected == null ? '先选择 Windows 电脑' : '输入消息',
-                border: const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(8)),
-                ),
+          TextField(
+            key: const ValueKey('message-input'),
+            controller: messageController,
+            minLines: 1,
+            maxLines: 1,
+            textInputAction: TextInputAction.send,
+            onSubmitted: controller.isConnected ? controller.sendMessage : null,
+            decoration: InputDecoration(
+              isDense: true,
+              prefixIcon: const Icon(Icons.edit_note),
+              hintText: selected == null ? '先选择 Windows 电脑' : '输入要发送的消息',
+              border: const OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(8)),
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 82,
-            child: TextField(
-              key: const ValueKey('channel-input'),
-              controller: channelController,
-              enabled: !controller.isConnected && !controller.isBusy,
-              maxLength: 2,
-              textAlign: TextAlign.center,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                counterText: '',
-                isDense: true,
-                labelText: 'Channel',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(8)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              SizedBox(
+                width: 96,
+                child: TextField(
+                  key: const ValueKey('channel-input'),
+                  controller: channelController,
+                  enabled: !controller.isConnected && !controller.isBusy,
+                  maxLength: 2,
+                  textAlign: TextAlign.center,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    counterText: '',
+                    isDense: true,
+                    labelText: 'Channel',
+                    prefixIcon: Icon(Icons.tag, size: 18),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(8)),
+                    ),
+                  ),
+                  onChanged: controller.setRfcommChannelFromInput,
                 ),
               ),
-              onChanged: controller.setRfcommChannelFromInput,
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton.filled(
-            tooltip: controller.isConnected ? '发送' : '请先连接',
-            onPressed: controller.isBusy
-                ? null
-                : () => controller.sendMessage(messageController.text),
-            icon: const Icon(Icons.send),
-          ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: selected == null || controller.isBusy
-                ? null
-                : controller.isConnected
-                ? controller.disconnect
-                : controller.connectSelected,
-            icon: Icon(controller.isConnected ? Icons.link_off : Icons.link),
-            label: Text(controller.isConnected ? '断开' : '连接'),
+              const Spacer(),
+              IconButton.filled(
+                tooltip: controller.isConnected ? '发送' : '请先连接',
+                onPressed: controller.isBusy
+                    ? null
+                    : () => controller.sendMessage(messageController.text),
+                icon: const Icon(Icons.send),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: selected == null || controller.isBusy
+                    ? null
+                    : controller.isConnected
+                    ? controller.disconnect
+                    : controller.connectSelected,
+                icon: Icon(
+                  controller.isConnected ? Icons.link_off : Icons.link,
+                ),
+                label: Text(controller.isConnected ? '断开' : '连接'),
+              ),
+            ],
           ),
         ],
       ),
@@ -613,49 +617,56 @@ class _DetailsPanel extends StatelessWidget {
     final sent = controller.lastSentMessage;
     return Container(
       width: double.infinity,
+      constraints: const BoxConstraints(maxHeight: 260),
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
       decoration: const BoxDecoration(color: Color(0xFF112624)),
       child: DefaultTextStyle(
         style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.35),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.info_outline, color: Colors.white70, size: 18),
-                const SizedBox(width: 6),
-                Text(
-                  '详情',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(color: Colors.white),
-                ),
-                const Spacer(),
-                Text(controller.isConnected ? '已连接' : '未连接'),
-              ],
-            ),
-            const SizedBox(height: 8),
-            _DetailLine(label: '选中设备', value: selected?.label ?? '无'),
-            _DetailLine(label: '设备地址', value: selected?.address ?? '-'),
-            _DetailLine(label: '服务 UUID', value: defaultSppUuid),
-            _DetailLine(
-              label: '通道',
-              value: controller.rfcommChannel.toString(),
-            ),
-            _DetailLine(
-              label: '最近发送',
-              value: sent == null
-                  ? '-'
-                  : '"${sent.text}" (${sent.byteLength} bytes)',
-            ),
-            _DetailLine(
-              label: '最近回包',
-              value: controller.lastReceivedText ?? '-',
-            ),
-            if (controller.lastError != null)
-              _DetailLine(label: '错误', value: controller.lastError!),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.info_outline,
+                    color: Colors.white70,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '详情',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleSmall?.copyWith(color: Colors.white),
+                  ),
+                  const Spacer(),
+                  Text(controller.isConnected ? '已连接' : '未连接'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _DetailLine(label: '选中设备', value: selected?.label ?? '无'),
+              _DetailLine(label: '设备地址', value: selected?.address ?? '-'),
+              _DetailLine(label: '服务 UUID', value: defaultSppUuid),
+              _DetailLine(
+                label: '通道',
+                value: controller.rfcommChannel.toString(),
+              ),
+              _DetailLine(
+                label: '最近发送',
+                value: sent == null
+                    ? '-'
+                    : '"${sent.text}" (${sent.byteLength} bytes)',
+              ),
+              _DetailLine(
+                label: '最近回包',
+                value: controller.lastReceivedText ?? '-',
+              ),
+              if (controller.lastError != null)
+                _DetailLine(label: '错误', value: controller.lastError!),
+            ],
+          ),
         ),
       ),
     );
@@ -679,9 +690,7 @@ class _DetailLine extends StatelessWidget {
             width: 78,
             child: Text(label, style: const TextStyle(color: Colors.white70)),
           ),
-          Expanded(
-            child: Text(value, maxLines: 2, overflow: TextOverflow.ellipsis),
-          ),
+          Expanded(child: SelectableText(value)),
         ],
       ),
     );
