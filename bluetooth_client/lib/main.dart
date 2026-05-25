@@ -41,6 +41,8 @@ class BleDeviceView {
   const BleDeviceView({
     required this.id,
     required this.name,
+    required this.platformName,
+    required this.advertisedName,
     required this.rssi,
     required this.signal,
     required this.connectable,
@@ -49,6 +51,8 @@ class BleDeviceView {
 
   final String id;
   final String name;
+  final String platformName;
+  final String advertisedName;
   final int rssi;
   final String signal;
   final bool connectable;
@@ -421,6 +425,8 @@ class RealBlePageController extends BlePageController {
     return BleDeviceView(
       id: result.device.remoteId.str,
       name: displayDeviceName(result),
+      platformName: result.device.platformName.trim(),
+      advertisedName: result.advertisementData.advName.trim(),
       rssi: result.rssi,
       signal: signalLabel(result.rssi),
       connectable: result.advertisementData.connectable,
@@ -823,6 +829,14 @@ class _DetailsPanel extends StatelessWidget {
                   : '${selected.name} (${selected.rssi} dBm)',
             ),
             _DetailLine(label: '设备 ID', value: selected?.id ?? '-'),
+            _DetailLine(
+              label: '平台名',
+              value: _emptyAsDash(selected?.platformName),
+            ),
+            _DetailLine(
+              label: '广播名',
+              value: _emptyAsDash(selected?.advertisedName),
+            ),
             _DetailLine(label: 'MTU', value: details.mtu?.toString() ?? '-'),
             _DetailLine(label: '服务数量', value: details.serviceCount.toString()),
             _DetailLine(label: '可写通道', value: _writableText(details)),
@@ -840,6 +854,11 @@ class _DetailsPanel extends StatelessWidget {
       return '-';
     }
     return '${details.writableServiceUuid} / ${details.writableCharacteristicUuid} (${details.writeMode})';
+  }
+
+  String _emptyAsDash(String? value) {
+    final trimmed = value?.trim() ?? '';
+    return trimmed.isEmpty ? '-' : trimmed;
   }
 
   String _lastSentText(BleConnectionDetails details) {

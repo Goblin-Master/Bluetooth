@@ -10,6 +10,8 @@ void main() {
       const BleDeviceView(
         id: 'AA:BB:CC:DD:EE:01',
         name: 'Windows Bridge',
+        platformName: 'Windows Bridge',
+        advertisedName: 'Bridge Adv',
         rssi: -42,
         signal: '强',
         connectable: true,
@@ -17,6 +19,8 @@ void main() {
       const BleDeviceView(
         id: 'AA:BB:CC:DD:EE:02',
         name: 'Sensor',
+        platformName: 'Sensor',
+        advertisedName: 'Sensor Adv',
         rssi: -75,
         signal: '中',
         connectable: true,
@@ -31,6 +35,7 @@ void main() {
     expect(find.text('BLE 桥接调试'), findsOneWidget);
     expect(find.text('扫描'), findsOneWidget);
     expect(find.text('Windows Bridge'), findsOneWidget);
+    expect(find.text('Bridge Adv'), findsNothing);
     expect(find.text('-42 dBm'), findsOneWidget);
     expect(find.text('Sensor'), findsOneWidget);
     expect(find.text('连接蓝牙'), findsOneWidget);
@@ -60,6 +65,8 @@ void main() {
       const BleDeviceView(
         id: 'AA:BB:CC:DD:EE:01',
         name: 'Windows Bridge',
+        platformName: 'Windows Bridge',
+        advertisedName: 'Bridge Adv',
         rssi: -42,
         signal: '强',
         connectable: true,

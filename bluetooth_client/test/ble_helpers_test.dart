@@ -3,6 +3,20 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('uses platform name before advertised name', () {
+    expect(
+      chooseDisplayDeviceName(platformName: 'Windows Bridge', advName: '乱码名'),
+      'Windows Bridge',
+    );
+  });
+
+  test('falls back to advertised name when platform name is empty', () {
+    expect(
+      chooseDisplayDeviceName(platformName: '', advName: 'BLE Sensor'),
+      'BLE Sensor',
+    );
+  });
+
   test('hides unknown devices unless showUnknown is enabled', () {
     final result = ScanResult(
       device: BluetoothDevice.fromId('AA:BB:CC:DD:EE:FF'),

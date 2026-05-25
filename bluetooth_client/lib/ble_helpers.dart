@@ -1,6 +1,8 @@
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+const unknownDeviceName = '未知设备';
+
 class WritableTarget {
   const WritableTarget({
     required this.characteristic,
@@ -51,17 +53,27 @@ WritableTarget? findWritableTarget(List<BluetoothService> services) {
 }
 
 String displayDeviceName(ScanResult result) {
-  final advName = result.advertisementData.advName.trim();
-  if (advName.isNotEmpty) {
-    return advName;
+  return chooseDisplayDeviceName(
+    platformName: result.device.platformName,
+    advName: result.advertisementData.advName,
+  );
+}
+
+String chooseDisplayDeviceName({
+  required String platformName,
+  required String advName,
+}) {
+  final normalizedPlatformName = platformName.trim();
+  if (normalizedPlatformName.isNotEmpty) {
+    return normalizedPlatformName;
   }
 
-  final platformName = result.device.platformName.trim();
-  if (platformName.isNotEmpty) {
-    return platformName;
+  final normalizedAdvName = advName.trim();
+  if (normalizedAdvName.isNotEmpty) {
+    return normalizedAdvName;
   }
 
-  return '未知设备';
+  return unknownDeviceName;
 }
 
 bool shouldShowScanResult(ScanResult result, {required bool showUnknown}) {
@@ -70,7 +82,7 @@ bool shouldShowScanResult(ScanResult result, {required bool showUnknown}) {
   }
 
   final name = displayDeviceName(result);
-  return name != '未知设备';
+  return name != unknownDeviceName;
 }
 
 String signalLabel(int rssi) {
