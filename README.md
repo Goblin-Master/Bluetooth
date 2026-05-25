@@ -87,6 +87,8 @@ uv run bt-server
 uv run bt-server --channel 5
 ```
 
+App 里的 `Channel` 输入框要和服务端 channel 保持一致。
+
 注意：这个服务必须跑在 Windows Python 上，不要跑在 WSL 里。WSL 不能直接拿到 Windows 蓝牙控制器。
 
 ## 启动 Flutter 客户端
@@ -103,9 +105,10 @@ App 内操作：
 
 1. 点击“刷新已配对设备”。
 2. 选择 Windows 电脑。
-3. 点击“连接”。
-4. 输入文本并点击发送。
-5. 下方详情区查看最近发送和 Windows 服务端回包。
+3. 确认 `Channel` 和 Windows 服务端一致，默认都是 4。
+4. 点击“连接”。
+5. 输入文本并点击发送。
+6. 下方详情区查看最近发送和 Windows 服务端回包。
 
 ## 测试
 

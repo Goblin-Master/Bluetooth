@@ -13,3 +13,5 @@ If channel 4 is busy:
 ```powershell
 uv run bt-server --channel 5
 ```
+
+Set the same channel in the Flutter app before connecting.

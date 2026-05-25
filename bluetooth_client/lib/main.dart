@@ -43,7 +43,9 @@ abstract class RfcommController extends ChangeNotifier {
   OutboundMessage? get lastSentMessage;
   List<PairedBluetoothDevice> get devices;
   PairedBluetoothDevice? get selectedDevice;
+  int get rfcommChannel;
 
+  void setRfcommChannelFromInput(String input);
   Future<void> refreshPairedDevices();
   Future<void> selectDevice(PairedBluetoothDevice device);
   Future<void> connectSelected();
@@ -61,6 +63,7 @@ class RealRfcommController extends RfcommController {
   OutboundMessage? _lastSentMessage;
   bool _isBusy = false;
   bool _isConnected = false;
+  int _rfcommChannel = defaultRfcommChannel;
   String _statusText = '就绪';
   String? _lastError;
   String? _lastReceivedText;
@@ -94,6 +97,20 @@ class RealRfcommController extends RfcommController {
 
   @override
   PairedBluetoothDevice? get selectedDevice => _selectedDevice;
+
+  @override
+  int get rfcommChannel => _rfcommChannel;
+
+  @override
+  void setRfcommChannelFromInput(String input) {
+    try {
+      _rfcommChannel = normalizeRfcommChannel(input);
+      _lastError = null;
+    } on ArgumentError {
+      _lastError = 'RFCOMM channel 必须是 1-30。';
+    }
+    notifyListeners();
+  }
 
   @override
   Future<void> refreshPairedDevices() async {
@@ -160,7 +177,7 @@ class RealRfcommController extends RfcommController {
         await _channel.invokeMethod<void>('connect', {
           'address': selected.address,
           'uuid': defaultSppUuid,
-          'channel': defaultRfcommChannel,
+          'channel': _rfcommChannel,
         });
         _isConnected = true;
         _statusText = '已连接 ${selected.label}';
@@ -282,10 +299,20 @@ class RfcommDebugPage extends StatefulWidget {
 
 class _RfcommDebugPageState extends State<RfcommDebugPage> {
   final TextEditingController _messageController = TextEditingController();
+  late final TextEditingController _channelController;
+
+  @override
+  void initState() {
+    super.initState();
+    _channelController = TextEditingController(
+      text: widget.controller.rfcommChannel.toString(),
+    );
+  }
 
   @override
   void dispose() {
     _messageController.dispose();
+    _channelController.dispose();
     super.dispose();
   }
 
@@ -316,6 +343,7 @@ class _RfcommDebugPageState extends State<RfcommDebugPage> {
                 _MessageBar(
                   controller: controller,
                   messageController: _messageController,
+                  channelController: _channelController,
                 ),
                 _DetailsPanel(controller: controller),
               ],
@@ -490,10 +518,12 @@ class _MessageBar extends StatelessWidget {
   const _MessageBar({
     required this.controller,
     required this.messageController,
+    required this.channelController,
   });
 
   final RfcommController controller;
   final TextEditingController messageController;
+  final TextEditingController channelController;
 
   @override
   Widget build(BuildContext context) {
@@ -508,6 +538,7 @@ class _MessageBar extends StatelessWidget {
         children: [
           Expanded(
             child: TextField(
+              key: const ValueKey('message-input'),
               controller: messageController,
               minLines: 1,
               maxLines: 1,
@@ -523,6 +554,28 @@ class _MessageBar extends StatelessWidget {
                   borderRadius: BorderRadius.all(Radius.circular(8)),
                 ),
               ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 82,
+            child: TextField(
+              key: const ValueKey('channel-input'),
+              controller: channelController,
+              enabled: !controller.isConnected && !controller.isBusy,
+              maxLength: 2,
+              textAlign: TextAlign.center,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                counterText: '',
+                isDense: true,
+                labelText: 'Channel',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(8)),
+                ),
+              ),
+              onChanged: controller.setRfcommChannelFromInput,
             ),
           ),
           const SizedBox(width: 8),
@@ -586,7 +639,10 @@ class _DetailsPanel extends StatelessWidget {
             _DetailLine(label: '选中设备', value: selected?.label ?? '无'),
             _DetailLine(label: '设备地址', value: selected?.address ?? '-'),
             _DetailLine(label: '服务 UUID', value: defaultSppUuid),
-            _DetailLine(label: '通道', value: defaultRfcommChannel.toString()),
+            _DetailLine(
+              label: '通道',
+              value: controller.rfcommChannel.toString(),
+            ),
             _DetailLine(
               label: '最近发送',
               value: sent == null

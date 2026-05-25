@@ -21,6 +21,7 @@ void main() {
     expect(find.text('Windows PC'), findsOneWidget);
     expect(find.text('AA:BB:CC:DD:EE:01'), findsOneWidget);
     expect(find.text('连接'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Channel'), findsOneWidget);
     expect(find.byIcon(Icons.send), findsOneWidget);
   });
 
@@ -39,12 +40,17 @@ void main() {
     await tester.pump();
     expect(find.textContaining('已选择'), findsWidgets);
 
+    await tester.enterText(find.byKey(const ValueKey('channel-input')), '2');
     await tester.tap(find.text('连接'));
     await tester.pump();
     expect(find.text('断开'), findsOneWidget);
     expect(find.textContaining('已连接'), findsWidgets);
+    expect(controller.lastConnectedChannel, 2);
 
-    await tester.enterText(find.byType(TextField), 'hello windows');
+    await tester.enterText(
+      find.byKey(const ValueKey('message-input')),
+      'hello windows',
+    );
     await tester.tap(find.byIcon(Icons.send));
     await tester.pump();
 
@@ -63,7 +69,10 @@ void main() {
 
     await tester.pumpWidget(BluetoothClientApp(controller: controller));
 
-    await tester.enterText(find.byType(TextField), 'hello');
+    await tester.enterText(
+      find.byKey(const ValueKey('message-input')),
+      'hello',
+    );
     await tester.tap(find.byIcon(Icons.send));
     await tester.pump();
 
@@ -82,6 +91,8 @@ class FakeRfcommController extends RfcommController {
   PairedBluetoothDevice? _selectedDevice;
 
   final List<String> sentMessages = [];
+  int channel = defaultRfcommChannel;
+  int? lastConnectedChannel;
 
   void setDevices(List<PairedBluetoothDevice> devices) {
     _devices = devices;
@@ -107,10 +118,24 @@ class FakeRfcommController extends RfcommController {
   OutboundMessage? get lastSentMessage => _lastSentMessage;
 
   @override
+  int get rfcommChannel => channel;
+
+  @override
   List<PairedBluetoothDevice> get devices => _devices;
 
   @override
   PairedBluetoothDevice? get selectedDevice => _selectedDevice;
+
+  @override
+  void setRfcommChannelFromInput(String input) {
+    try {
+      channel = normalizeRfcommChannel(input);
+      _lastError = null;
+    } on ArgumentError {
+      _lastError = 'RFCOMM channel 必须是 1-30。';
+    }
+    notifyListeners();
+  }
 
   @override
   Future<void> refreshPairedDevices() async {
@@ -134,6 +159,7 @@ class FakeRfcommController extends RfcommController {
       return;
     }
     _isConnected = true;
+    lastConnectedChannel = channel;
     _statusText = '已连接 ${_selectedDevice!.label}';
     _lastError = null;
     notifyListeners();

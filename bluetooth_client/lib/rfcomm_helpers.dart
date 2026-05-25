@@ -48,3 +48,11 @@ int comparePairedDevices(PairedBluetoothDevice a, PairedBluetoothDevice b) {
   }
   return a.address.compareTo(b.address);
 }
+
+int normalizeRfcommChannel(String input) {
+  final channel = int.tryParse(input.trim());
+  if (channel == null || channel < 1 || channel > 30) {
+    throw ArgumentError('RFCOMM channel must be between 1 and 30');
+  }
+  return channel;
+}

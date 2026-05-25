@@ -32,4 +32,15 @@ void main() {
   test('rejects empty outbound messages', () {
     expect(() => OutboundMessage.fromInput('   '), throwsArgumentError);
   });
+
+  test('normalizes RFCOMM channel input', () {
+    expect(normalizeRfcommChannel('1'), 1);
+    expect(normalizeRfcommChannel(' 30 '), 30);
+  });
+
+  test('rejects invalid RFCOMM channels', () {
+    expect(() => normalizeRfcommChannel('0'), throwsArgumentError);
+    expect(() => normalizeRfcommChannel('31'), throwsArgumentError);
+    expect(() => normalizeRfcommChannel('abc'), throwsArgumentError);
+  });
 }
