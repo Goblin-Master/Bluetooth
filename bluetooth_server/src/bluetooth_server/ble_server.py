@@ -57,7 +57,6 @@ async def start_ble_server() -> None:
     )
     char_parameters.read_protection_level = GattProtectionLevel.PLAIN
     char_parameters.write_protection_level = GattProtectionLevel.PLAIN
-    char_parameters.static_value = make_buffer(DEFAULT_BLE_VALUE)
     char_parameters.user_description = "Bluetooth test echo"
 
     char_result = await service_provider.service.create_characteristic_async(
@@ -153,5 +152,4 @@ class _BleState:
 
         print(f"BLE received {datetime.now().isoformat(timespec='seconds')}: {message}")
         self.value = bytearray(build_echo_response(message))
-        characteristic.static_value = self._make_buffer(self.value)
         characteristic.notify_value_async(self._make_buffer(self.value))

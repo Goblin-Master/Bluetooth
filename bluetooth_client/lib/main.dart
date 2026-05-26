@@ -285,6 +285,7 @@ class RealBleController extends BleController {
         _isConnected = true;
         _mtu = device.mtuNow;
 
+        await _clearGattCacheIfPossible(device);
         final services = await device.discoverServices(timeout: 15);
         _serviceCount = services.length;
         _bridgeCharacteristic = _findBridgeCharacteristic(services);
@@ -419,6 +420,15 @@ class RealBleController extends BleController {
       }
     }
     return null;
+  }
+
+  Future<void> _clearGattCacheIfPossible(BluetoothDevice device) async {
+    try {
+      await device.clearGattCache();
+    } catch (_) {
+      // Cache clearing is best-effort. Discovery below still reports the
+      // actual properties Android is currently using.
+    }
   }
 
   BleWriteMode _writeModeFor(BluetoothCharacteristic characteristic) {

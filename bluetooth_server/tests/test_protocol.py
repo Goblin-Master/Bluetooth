@@ -6,6 +6,7 @@ import io
 from bluetooth_server.ble_server import (
     BLE_CHARACTERISTIC_UUID,
     BLE_SERVICE_UUID,
+    _BleState,
 )
 from bluetooth_server.cli import build_parser
 from bluetooth_server.protocol import build_echo_response, decode_message, handle_payload
@@ -71,6 +72,28 @@ class ProtocolTest(unittest.TestCase):
             BLE_CHARACTERISTIC_UUID,
             "12345678-1234-5678-1234-56789abcdef1",
         )
+
+    def test_ble_state_notifies_echo_without_mutating_static_value(self):
+        class Characteristic:
+            def __init__(self):
+                self.notified = None
+
+            def notify_value_async(self, value):
+                self.notified = value
+
+        async def scenario():
+            state = _BleState(bytes)
+            characteristic = Characteristic()
+
+            state.receive(bytearray(b"hello"), characteristic)
+
+            self.assertEqual(state.value, bytearray(b"Echo: hello\n"))
+            self.assertEqual(characteristic.notified, b"Echo: hello\n")
+            self.assertFalse(hasattr(characteristic, "static_value"))
+
+        import asyncio
+
+        asyncio.run(scenario())
 
     def test_main_dispatches_rfcomm_mode(self):
         from bluetooth_server.cli import main

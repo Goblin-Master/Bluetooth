@@ -1,7 +1,7 @@
 [project]
 name = "bluetooth-server"
 version = "0.1.0"
-description = "Windows Bluetooth Classic RFCOMM echo server for Flutter testing."
+description = "Windows Bluetooth Classic RFCOMM and WinRT BLE GATT echo server for Flutter testing."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
