@@ -50,7 +50,14 @@ List<BleDeviceInfo> filterBleDevices(
   Iterable<BleDeviceInfo> devices, {
   required bool showAllNamedDevices,
 }) {
-  final filtered = devices.where((device) {
+  final deviceList = devices.toList();
+  final hasNamedBridge = deviceList.any(
+    (device) => device.isBridge && device.hasUsableName,
+  );
+  final filtered = deviceList.where((device) {
+    if (hasNamedBridge && device.isBridge && !device.hasUsableName) {
+      return false;
+    }
     if (device.isBridge) {
       return true;
     }

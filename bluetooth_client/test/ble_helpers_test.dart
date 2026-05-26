@@ -54,6 +54,43 @@ void main() {
     expect(filterBleDevices([device], showAllNamedDevices: false), [device]);
   });
 
+  test('hides unknown bridge when a named bridge is available', () {
+    final devices = [
+      const BleDeviceInfo(
+        id: '1',
+        name: 'Unknown',
+        rssi: -44,
+        advertisesBridgeService: true,
+      ),
+      const BleDeviceInfo(
+        id: '2',
+        name: 'LP-A0113',
+        rssi: -49,
+        advertisesBridgeService: true,
+      ),
+    ];
+
+    expect(filterBleDevices(devices, showAllNamedDevices: false), [
+      const BleDeviceInfo(
+        id: '2',
+        name: 'LP-A0113',
+        rssi: -49,
+        advertisesBridgeService: true,
+      ),
+    ]);
+  });
+
+  test('keeps unknown bridge when it is the only bridge result', () {
+    const device = BleDeviceInfo(
+      id: '1',
+      name: 'Unknown',
+      rssi: -44,
+      advertisesBridgeService: true,
+    );
+
+    expect(filterBleDevices([device], showAllNamedDevices: false), [device]);
+  });
+
   test('does not use service filters for default BLE scan', () {
     expect(defaultBleScanServiceFilters, isEmpty);
   });
