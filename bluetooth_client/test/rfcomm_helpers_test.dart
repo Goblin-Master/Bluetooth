@@ -1,4 +1,5 @@
 import 'package:bluetooth_client/rfcomm_helpers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -6,6 +7,34 @@ void main() {
     expect(displayBluetoothName('Windows PC', 'AA:BB'), 'Windows PC');
     expect(displayBluetoothName('', 'AA:BB'), 'AA:BB');
     expect(displayBluetoothName(null, 'AA:BB'), 'AA:BB');
+  });
+
+  test('uses RFCOMM native bridge only on native Android', () {
+    expect(
+      shouldUseRfcommNativeBridge(
+        isWeb: false,
+        platform: TargetPlatform.android,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldUseRfcommNativeBridge(
+        isWeb: true,
+        platform: TargetPlatform.android,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldUseRfcommNativeBridge(isWeb: false, platform: TargetPlatform.iOS),
+      isFalse,
+    );
+    expect(
+      shouldUseRfcommNativeBridge(
+        isWeb: false,
+        platform: TargetPlatform.windows,
+      ),
+      isFalse,
+    );
   });
 
   test('sorts paired devices by name and address', () {

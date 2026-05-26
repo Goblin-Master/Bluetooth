@@ -1,6 +1,8 @@
 # bluetooth_client
 
-Android Flutter client for Bluetooth Classic RFCOMM and BLE GATT testing.
+Flutter client for Bluetooth Classic RFCOMM and BLE GATT testing.
+
+RFCOMM is implemented through the current Android native bridge. BLE GATT uses `flutter_blue_plus` and the app code does not block non-Android platforms; adding another Flutter target still requires the matching platform folder and system Bluetooth permissions/entitlements.
 
 Run from WSL:
 

@@ -1,6 +1,6 @@
 # Bluetooth
 
-Flutter Android client + Windows Python Bluetooth test bridge.
+Flutter Bluetooth client + Windows Python Bluetooth test bridge.
 
 ## Goal
 
@@ -11,16 +11,16 @@ RFCOMM:
 Flutter Android App -> Bluetooth Classic RFCOMM -> Windows Python socket server
 
 BLE GATT:
-Flutter Android App -> BLE GATT write/read/notify -> Windows Python WinRT GATT server
+Flutter App -> BLE GATT write/read/notify -> Windows Python WinRT GATT server
 ```
 
-两条链路现在都只做 echo 调试，不做 Wi-Fi 配网写入，也不接 Go 后端。服务端必须跑在 Windows Python 上，WSL 只能跑 Flutter/Android 工具链，不能直接拿到 Windows 蓝牙控制器。
+两条链路现在都只做 echo 调试，不做 Wi-Fi 配网写入，也不接 Go 后端。RFCOMM 是当前 Android 原生桥接实现；BLE 使用 `flutter_blue_plus`，客户端逻辑不再限制 Android。服务端必须跑在 Windows Python 上，WSL 不能直接拿到 Windows 蓝牙控制器。
 
 ## Project Layout
 
 ```text
 .
-├── bluetooth_client/        # Flutter Android RFCOMM + BLE GATT client
+├── bluetooth_client/        # Flutter RFCOMM + BLE GATT client
 ├── bluetooth_server/        # Windows Python RFCOMM + WinRT BLE server, managed by uv
 ├── install_flutter_android_wsl.sh
 └── install_uv_windows.ps1

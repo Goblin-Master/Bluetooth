@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 const bleBridgeServiceUuid = '12345678-1234-5678-1234-56789abcdef0';
 const bleBridgeCharacteristicUuid = '12345678-1234-5678-1234-56789abcdef1';
 const List<String> defaultBleScanServiceFilters = [];
@@ -5,6 +7,13 @@ const List<String> defaultBleScanServiceFilters = [];
 enum BleMode { bridge, explorer }
 
 enum BleWriteMode { withResponse, withoutResponse, unsupported }
+
+bool shouldRequestBleRuntimePermissions({
+  required bool isWeb,
+  required TargetPlatform platform,
+}) {
+  return !isWeb && platform == TargetPlatform.android;
+}
 
 BleWriteMode selectBleWriteMode({
   required bool canWrite,

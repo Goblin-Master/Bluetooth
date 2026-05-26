@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter/foundation.dart';
@@ -460,29 +459,30 @@ class RealBleController extends BleController {
   }
 
   Future<void> _ensureBleReady() async {
-    if (kIsWeb || !Platform.isAndroid) {
-      throw StateError('BLE 调试只支持 Android 真机。');
-    }
-
-    final permissions = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-    ].request();
-    final denied = permissions.entries
-        .where((entry) => !entry.value.isGranted)
-        .map((entry) => entry.key.toString())
-        .join(', ');
-    if (denied.isNotEmpty) {
-      throw StateError('缺少 BLE 权限：$denied');
+    if (shouldRequestBleRuntimePermissions(
+      isWeb: kIsWeb,
+      platform: defaultTargetPlatform,
+    )) {
+      final permissions = await [
+        Permission.bluetoothScan,
+        Permission.bluetoothConnect,
+      ].request();
+      final denied = permissions.entries
+          .where((entry) => !entry.value.isGranted)
+          .map((entry) => entry.key.toString())
+          .join(', ');
+      if (denied.isNotEmpty) {
+        throw StateError('缺少 BLE 权限：$denied');
+      }
     }
 
     final supported = await FlutterBluePlus.isSupported;
     if (!supported) {
-      throw StateError('当前手机不支持 BLE。');
+      throw StateError('当前设备不支持 BLE。');
     }
     final adapterState = await FlutterBluePlus.adapterState.first;
     if (adapterState != BluetoothAdapterState.on) {
-      throw StateError('请先打开手机蓝牙。');
+      throw StateError('请先打开当前设备蓝牙。');
     }
   }
 
@@ -743,7 +743,10 @@ class RealRfcommController extends RfcommController {
     await _runBusy(() async {
       try {
         _lastError = null;
-        if (kIsWeb || !Platform.isAndroid) {
+        if (!shouldUseRfcommNativeBridge(
+          isWeb: kIsWeb,
+          platform: defaultTargetPlatform,
+        )) {
           _statusText = '仅支持 Android 真机';
           _devices = [];
           return;

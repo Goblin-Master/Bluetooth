@@ -1,7 +1,16 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 const defaultSppUuid = '00001101-0000-1000-8000-00805F9B34FB';
 const defaultRfcommChannel = 4;
+
+bool shouldUseRfcommNativeBridge({
+  required bool isWeb,
+  required TargetPlatform platform,
+}) {
+  return !isWeb && platform == TargetPlatform.android;
+}
 
 class PairedBluetoothDevice {
   const PairedBluetoothDevice({required this.address, required this.name});

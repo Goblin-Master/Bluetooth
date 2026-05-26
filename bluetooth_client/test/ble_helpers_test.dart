@@ -1,4 +1,5 @@
 import 'package:bluetooth_client/ble_helpers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -93,6 +94,51 @@ void main() {
 
   test('does not use service filters for default BLE scan', () {
     expect(defaultBleScanServiceFilters, isEmpty);
+  });
+
+  test('requests BLE runtime permissions only on native Android', () {
+    expect(
+      shouldRequestBleRuntimePermissions(
+        isWeb: false,
+        platform: TargetPlatform.android,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldRequestBleRuntimePermissions(
+        isWeb: true,
+        platform: TargetPlatform.android,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldRequestBleRuntimePermissions(
+        isWeb: false,
+        platform: TargetPlatform.iOS,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldRequestBleRuntimePermissions(
+        isWeb: false,
+        platform: TargetPlatform.macOS,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldRequestBleRuntimePermissions(
+        isWeb: false,
+        platform: TargetPlatform.linux,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldRequestBleRuntimePermissions(
+        isWeb: false,
+        platform: TargetPlatform.windows,
+      ),
+      isFalse,
+    );
   });
 
   test('filters explorer devices independently from bridge UUID', () {
