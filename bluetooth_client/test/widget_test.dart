@@ -99,6 +99,20 @@ void main() {
     expect(errorText.maxLines, isNull);
   });
 
+  testWidgets('hides RFCOMM details while the keyboard is open', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetViewInsets);
+    tester.view.viewInsets = FakeViewPadding(bottom: 320);
+
+    await tester.pumpWidget(
+      BluetoothClientApp(controller: FakeRfcommController()),
+    );
+
+    expect(find.text('详情'), findsNothing);
+    expect(find.byKey(const ValueKey('message-input')), findsOneWidget);
+  });
+
   testWidgets('shows BLE placeholder tab', (tester) async {
     final bleController = FakeBleController();
 

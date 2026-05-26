@@ -4,19 +4,19 @@ Flutter Android client + Windows Python Bluetooth test bridge.
 
 ## Goal
 
-This project verifies two small phone-to-Windows Bluetooth paths:
+这个项目用来验证手机到 Windows 电脑的两条蓝牙调试链路：
 
 ```text
 RFCOMM:
-Flutter Android App -> Bluetooth Classic RFCOMM -> Windows Python Server
+Flutter Android App -> Bluetooth Classic RFCOMM -> Windows Python socket server
 
 BLE GATT:
-Flutter Android App -> BLE GATT write -> Windows Python WinRT Server
+Flutter Android App -> BLE GATT write/read/notify -> Windows Python WinRT GATT server
 ```
 
-两条链路现在都只做 echo 调试，不做 Wi-Fi 配网写入，也不接 Go 后端。RFCOMM 用系统配对设备和 channel；BLE GATT 用 Windows WinRT 暴露固定 Service UUID 和 Characteristic UUID，手机上看到的名称可能是电脑名或无名设备。
+两条链路现在都只做 echo 调试，不做 Wi-Fi 配网写入，也不接 Go 后端。服务端必须跑在 Windows Python 上，WSL 只能跑 Flutter/Android 工具链，不能直接拿到 Windows 蓝牙控制器。
 
-## 目录结构
+## Project Layout
 
 ```text
 .
@@ -26,7 +26,7 @@ Flutter Android App -> BLE GATT write -> Windows Python WinRT Server
 └── install_uv_windows.ps1
 ```
 
-## WSL Flutter 环境
+## WSL Flutter Environment
 
 WSL 脚本只安装 Flutter、Android SDK、JDK 和必要 Linux 依赖：
 
@@ -56,13 +56,21 @@ adb devices
 flutter devices
 ```
 
-你的真机无线调试设备如果出现两个入口，优先用明确 IP 的那个：
+无线调试端口会变化。以 `flutter devices` 当前显示为准，例如：
 
 ```bash
-flutter run -d 192.168.2.181:40273
+flutter run -d 192.168.2.181:42091
 ```
 
-## Windows Python 环境
+WSL 里如果旧无线设备还挂着，可以先断开旧地址再连新的：
+
+```bash
+adb disconnect 192.168.2.181:40273
+adb connect 192.168.2.181:42091
+adb devices
+```
+
+## Windows Python Environment
 
 Windows 上安装 uv 和 Python：
 
@@ -70,20 +78,14 @@ Windows 上安装 uv 和 Python：
 powershell -ExecutionPolicy Bypass -File .\install_uv_windows.ps1
 ```
 
-然后在 Windows 设置里完成：
-
-```text
-Settings -> Bluetooth & devices -> Pair phone with this PC
-```
-
-## 启动服务端
-
-在 Windows PowerShell 里运行：
+然后安装服务端依赖：
 
 ```powershell
 cd bluetooth_server
 uv sync
 ```
+
+## Start Server
 
 RFCOMM only:
 
@@ -103,43 +105,84 @@ Both:
 uv run bt-server --mode both --channel 4
 ```
 
-默认 RFCOMM channel 是 `4`。如果被占用：
+当前没有 `--ble-name` 参数。Windows WinRT GATT Server 主要通过固定 Service UUID 暴露服务，手机扫描时看到的设备名可能是电脑名，也可能是 `Unknown`。
 
-```powershell
-uv run bt-server --channel 5
+## Client Modes
+
+### RFCOMM Tab
+
+RFCOMM 是 Bluetooth Classic 串口风格连接。使用前先在 Windows 设置里把手机和电脑系统蓝牙配对：
+
+```text
+Settings -> Bluetooth & devices -> Pair phone with this PC
 ```
 
-App 里的 RFCOMM `Channel` 输入框要和服务端 channel 保持一致。服务端必须跑在 Windows Python 上，不要跑在 WSL 里；WSL 不能直接拿到 Windows 蓝牙控制器。
+App 操作：
 
-## 启动 Flutter 客户端
+1. 打开 `RFCOMM` tab。
+2. 点击刷新已配对设备。
+3. 选择 Windows 电脑。
+4. 确认 `Channel` 和服务端一致，默认都是 `4`。
+5. 点击连接。
+6. 输入文本并发送。
+7. 下方详情区查看最近发送、回包和错误。
+
+RFCOMM 连接先尝试标准 SPP UUID：
+
+```text
+00001101-0000-1000-8000-00805F9B34FB
+```
+
+如果标准 UUID 连接失败，Android 原生层会按输入的 RFCOMM channel 做 fallback。channel 必须和 Windows 服务端 `--channel` 一致。
+
+### BLE Bridge Tab
+
+BLE Bridge 是给当前 Windows Python WinRT 后端用的固定协议。服务端固定暴露：
+
+```text
+Service UUID:        12345678-1234-5678-1234-56789abcdef0
+Characteristic UUID: 12345678-1234-5678-1234-56789abcdef1
+```
+
+两个 UUID 的作用不同：
+
+- `Service UUID` 用来标识“这是我们的 Bluetooth bridge 服务”。手机扫描到广告包后，如果广告里包含这个 Service UUID，就把它当成 Bridge 设备。
+- `Characteristic UUID` 是连接成功并执行 service discovery 之后，用来定位真正收发消息的数据通道。Flutter 往这个 Characteristic 写入文本，Windows 收到后通过 notify 回 `Echo: ...`。
+
+Bridge 模式查找规则：
+
+- 扫描时不使用平台 service filter，先接收附近 BLE 广告，再在 App 内筛选。
+- 默认只显示广告里包含固定 Service UUID 的 Bridge 设备。
+- 如果同一个 Bridge 同时出现有名称设备和 `Unknown` 设备，隐藏 `Unknown` 那条，保留有名称的那条。
+- 打开“其它设备”后，会额外显示有名称的非 Bridge BLE 设备，但它们不保证能按 Bridge 固定 Characteristic 收发消息。
+- 列表按 Bridge 优先，再按 RSSI 信号强度由强到弱排序。
+
+### BLE Explorer Tab
+
+Explorer 是通用 BLE 浏览/试写模式，不要求对方使用我们的固定 UUID。
+
+Explorer 查找规则：
+
+- 默认显示有名称的 BLE 设备。
+- 打开“无名设备”后才显示 `Unknown`。
+- 设备列表按 RSSI 信号强度由强到弱排序。
+- 连接后枚举全部 Service 和 Characteristic。
+- 自动选择第一条可写 Characteristic，也可以手动点其它 Characteristic。
+- 只有属性包含 `write` 或 `writeWithoutResponse` 的 Characteristic 才能写。
+
+注意：可写只代表蓝牙属性允许写入，不代表对方设备能理解普通 UTF-8 文本。很多设备需要自己的二进制协议、配对、握手、校验或特定 write mode，所以 Explorer 连接别的设备时可能能连接但不能得到 echo。
+
+## Run Flutter Client
 
 在 WSL 里运行：
 
 ```bash
 cd bluetooth_client
 flutter pub get
-flutter run -d 192.168.2.181:40273
+flutter run -d 192.168.2.181:42091
 ```
 
-App 内 RFCOMM 操作：
-
-1. 点击“刷新已配对设备”。
-2. 选择 Windows 电脑。
-3. 确认 `Channel` 和 Windows 服务端一致，默认都是 4。
-4. 点击“连接”。
-5. 输入文本并点击发送。
-6. 下方详情区查看最近发送和 Windows 服务端回包。
-
-App 内 BLE GATT 操作：
-
-1. Windows PowerShell 启动 `uv run bt-server --mode ble` 或 `--mode both`。
-2. Flutter App 切到 `BLE` tab。
-3. 点击“扫描”，默认只显示固定 BLE 服务；打开“显示全部”才会显示其它有名称设备。
-4. 选择设备，点击“连接 BLE”。
-5. 输入文本并发送。
-6. 下方详情区查看固定 UUID、特征属性、MTU、service 数量、最近回包和完整错误。
-
-## 测试
+## Verification
 
 Flutter：
 

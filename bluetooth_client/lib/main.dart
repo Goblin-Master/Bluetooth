@@ -54,6 +54,7 @@ class BluetoothClientHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -69,7 +70,10 @@ class BluetoothClientHome extends StatelessWidget {
         body: SafeArea(
           child: TabBarView(
             children: [
-              RfcommDebugPage(controller: rfcommController),
+              RfcommDebugPage(
+                controller: rfcommController,
+                keyboardOpen: keyboardOpen,
+              ),
               BleGattDebugPage(controller: bleController),
             ],
           ),
@@ -911,9 +915,14 @@ class RealRfcommController extends RfcommController {
 }
 
 class RfcommDebugPage extends StatefulWidget {
-  const RfcommDebugPage({super.key, required this.controller});
+  const RfcommDebugPage({
+    super.key,
+    required this.controller,
+    this.keyboardOpen = false,
+  });
 
   final RfcommController controller;
+  final bool keyboardOpen;
 
   @override
   State<RfcommDebugPage> createState() => _RfcommDebugPageState();
@@ -953,7 +962,8 @@ class _RfcommDebugPageState extends State<RfcommDebugPage> {
               messageController: _messageController,
               channelController: _channelController,
             ),
-            _RfcommDetailsPanel(controller: controller),
+            if (!widget.keyboardOpen)
+              _RfcommDetailsPanel(controller: controller),
           ],
         );
       },
@@ -1791,7 +1801,11 @@ class _RfcommDetailsPanel extends StatelessWidget {
         DetailRowData(label: '错误', value: controller.lastError!),
     ];
 
-    return SharedDetailsPanel(connected: controller.isConnected, rows: rows);
+    return SharedDetailsPanel(
+      connected: controller.isConnected,
+      rows: rows,
+      compact: true,
+    );
   }
 }
 
