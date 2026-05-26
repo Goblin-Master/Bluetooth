@@ -103,21 +103,26 @@ abstract class BleController extends ChangeNotifier {
   bool get isScanning;
   bool get isConnected;
   bool get showAllNamedDevices;
+  BleMode get mode;
   String get statusText;
   String? get lastError;
   String? get lastReceivedText;
   OutboundMessage? get lastSentMessage;
   List<BleDeviceInfo> get devices;
   BleDeviceInfo? get selectedDevice;
+  List<BleCharacteristicInfo> get explorerCharacteristics;
+  BleCharacteristicInfo? get selectedCharacteristic;
   int? get mtu;
   int get serviceCount;
   String? get connectedAtText;
   String? get characteristicPropertiesText;
 
+  void setMode(BleMode value);
   void setShowAllNamedDevices(bool value);
   Future<void> startScan();
   Future<void> stopScan();
   Future<void> selectDevice(BleDeviceInfo device);
+  Future<void> selectCharacteristic(BleCharacteristicInfo characteristic);
   Future<void> connectSelected();
   Future<void> disconnect();
   Future<void> sendMessage(String text);
@@ -125,15 +130,19 @@ abstract class BleController extends ChangeNotifier {
 
 class RealBleController extends BleController {
   final Map<String, _ScannedBleDevice> _scanResults = {};
+  final Map<String, BluetoothCharacteristic> _characteristicResults = {};
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   BluetoothDevice? _connectedDevice;
-  BluetoothCharacteristic? _bridgeCharacteristic;
+  BluetoothCharacteristic? _selectedBleCharacteristic;
   BleDeviceInfo? _selectedDevice;
+  BleCharacteristicInfo? _selectedCharacteristic;
+  List<BleCharacteristicInfo> _explorerCharacteristics = [];
   OutboundMessage? _lastSentMessage;
   bool _isBusy = false;
   bool _isScanning = false;
   bool _isConnected = false;
   bool _showAllNamedDevices = false;
+  BleMode _mode = BleMode.bridge;
   int? _mtu;
   int _serviceCount = 0;
   String _statusText = '就绪';
@@ -170,6 +179,9 @@ class RealBleController extends BleController {
   bool get showAllNamedDevices => _showAllNamedDevices;
 
   @override
+  BleMode get mode => _mode;
+
+  @override
   String get statusText => _statusText;
 
   @override
@@ -181,14 +193,29 @@ class RealBleController extends BleController {
   @override
   OutboundMessage? get lastSentMessage => _lastSentMessage;
 
-  @override
-  List<BleDeviceInfo> get devices => filterBleDevices(
+  List<BleDeviceInfo> get _visibleBridgeDevices => filterBleDevices(
     _scanResults.values.map((entry) => entry.info),
     showAllNamedDevices: _showAllNamedDevices,
   );
 
+  List<BleDeviceInfo> get _visibleExplorerDevices => filterExplorerDevices(
+    _scanResults.values.map((entry) => entry.info),
+    showUnnamedDevices: _showAllNamedDevices,
+  );
+
+  @override
+  List<BleDeviceInfo> get devices =>
+      _mode == BleMode.bridge ? _visibleBridgeDevices : _visibleExplorerDevices;
+
   @override
   BleDeviceInfo? get selectedDevice => _selectedDevice;
+
+  @override
+  List<BleCharacteristicInfo> get explorerCharacteristics =>
+      List.unmodifiable(_explorerCharacteristics);
+
+  @override
+  BleCharacteristicInfo? get selectedCharacteristic => _selectedCharacteristic;
 
   @override
   int? get mtu => _mtu;
@@ -203,6 +230,24 @@ class RealBleController extends BleController {
   String? get characteristicPropertiesText => _characteristicPropertiesText;
 
   @override
+  void setMode(BleMode value) {
+    if (_mode == value) {
+      return;
+    }
+    _mode = value;
+    _selectedDevice = null;
+    _selectedBleCharacteristic = null;
+    _selectedCharacteristic = null;
+    _explorerCharacteristics = [];
+    _characteristicResults.clear();
+    _lastError = null;
+    _lastReceivedText = null;
+    _characteristicPropertiesText = null;
+    _statusText = value == BleMode.bridge ? 'Bridge 模式' : 'Explorer 模式';
+    notifyListeners();
+  }
+
+  @override
   void setShowAllNamedDevices(bool value) {
     _showAllNamedDevices = value;
     notifyListeners();
@@ -215,6 +260,10 @@ class RealBleController extends BleController {
         _lastError = null;
         _lastReceivedText = null;
         _characteristicPropertiesText = null;
+        _explorerCharacteristics = [];
+        _selectedCharacteristic = null;
+        _selectedBleCharacteristic = null;
+        _characteristicResults.clear();
         await _ensureBleReady();
         _scanResults.clear();
         _selectedDevice = null;
@@ -250,7 +299,23 @@ class RealBleController extends BleController {
     _selectedDevice = device;
     _lastError = null;
     _lastReceivedText = null;
+    _selectedBleCharacteristic = null;
+    _selectedCharacteristic = null;
+    _explorerCharacteristics = [];
+    _characteristicResults.clear();
     _statusText = '已选择 ${device.name}';
+    notifyListeners();
+  }
+
+  @override
+  Future<void> selectCharacteristic(
+    BleCharacteristicInfo characteristic,
+  ) async {
+    _selectedCharacteristic = characteristic;
+    _selectedBleCharacteristic = _characteristicResults[characteristic.id];
+    _characteristicPropertiesText = characteristic.propertiesText;
+    _lastError = null;
+    _statusText = '已选择 Characteristic';
     notifyListeners();
   }
 
@@ -288,15 +353,28 @@ class RealBleController extends BleController {
         await _clearGattCacheIfPossible(device);
         final services = await device.discoverServices(timeout: 15);
         _serviceCount = services.length;
-        _bridgeCharacteristic = _findBridgeCharacteristic(services);
-        if (_bridgeCharacteristic == null) {
-          throw StateError('未发现固定 BLE GATT Characteristic。');
+        if (_mode == BleMode.bridge) {
+          _selectedBleCharacteristic = _findBridgeCharacteristic(services);
+          if (_selectedBleCharacteristic == null) {
+            throw StateError('未发现固定 BLE GATT Characteristic。');
+          }
+          _selectedCharacteristic = _infoForCharacteristic(
+            _selectedBleCharacteristic!,
+          );
+        } else {
+          _indexExplorerCharacteristics(services);
+          _selectedCharacteristic = _firstWritableCharacteristic();
+          if (_selectedCharacteristic == null) {
+            throw StateError('没有发现可写 Characteristic。');
+          }
+          _selectedBleCharacteristic =
+              _characteristicResults[_selectedCharacteristic!.id];
         }
         _characteristicPropertiesText = _describeCharacteristicProperties(
-          _bridgeCharacteristic!,
+          _selectedBleCharacteristic!,
         );
 
-        final notifyCharacteristic = _bridgeCharacteristic!;
+        final notifyCharacteristic = _selectedBleCharacteristic!;
         _subscriptions.add(
           notifyCharacteristic.onValueReceived.listen(_handleNotification),
         );
@@ -309,7 +387,7 @@ class RealBleController extends BleController {
         _statusText = '已连接 ${selected.name}';
       } catch (error) {
         _isConnected = false;
-        _bridgeCharacteristic = null;
+        _selectedBleCharacteristic = null;
         _setError('连接失败', error);
       }
     });
@@ -321,7 +399,7 @@ class RealBleController extends BleController {
       try {
         await _connectedDevice?.disconnect();
         _isConnected = false;
-        _bridgeCharacteristic = null;
+        _selectedBleCharacteristic = null;
         _statusText = '已断开';
       } catch (error) {
         _setError('断开失败', error);
@@ -331,7 +409,7 @@ class RealBleController extends BleController {
 
   @override
   Future<void> sendMessage(String text) async {
-    if (!_isConnected || _bridgeCharacteristic == null) {
+    if (!_isConnected || _selectedBleCharacteristic == null) {
       _lastError = '请先连接 BLE GATT 服务。';
       notifyListeners();
       return;
@@ -348,7 +426,7 @@ class RealBleController extends BleController {
 
     await _runBusy(() async {
       try {
-        final characteristic = _bridgeCharacteristic!;
+        final characteristic = _selectedBleCharacteristic!;
         final writeMode = _writeModeFor(characteristic);
         if (writeMode == BleWriteMode.unsupported) {
           throw StateError(
@@ -356,7 +434,7 @@ class RealBleController extends BleController {
             '${_describeCharacteristicProperties(characteristic)}',
           );
         }
-        await _bridgeCharacteristic!.write(
+        await characteristic.write(
           utf8.encode(message.text),
           withoutResponse: writeMode == BleWriteMode.withoutResponse,
         );
@@ -420,6 +498,56 @@ class RealBleController extends BleController {
       }
     }
     return null;
+  }
+
+  void _indexExplorerCharacteristics(List<BluetoothService> services) {
+    _characteristicResults.clear();
+    _explorerCharacteristics = [];
+    for (final service in services) {
+      for (final characteristic in service.characteristics) {
+        final info = _infoForCharacteristic(characteristic);
+        _characteristicResults[info.id] = characteristic;
+        _explorerCharacteristics.add(info);
+      }
+    }
+    _explorerCharacteristics.sort((a, b) {
+      if (a.isWritable != b.isWritable) {
+        return a.isWritable ? -1 : 1;
+      }
+      final byService = a.serviceUuid.compareTo(b.serviceUuid);
+      if (byService != 0) {
+        return byService;
+      }
+      return a.characteristicUuid.compareTo(b.characteristicUuid);
+    });
+  }
+
+  BleCharacteristicInfo? _firstWritableCharacteristic() {
+    for (final characteristic in _explorerCharacteristics) {
+      if (characteristic.isWritable) {
+        return characteristic;
+      }
+    }
+    return null;
+  }
+
+  BleCharacteristicInfo _infoForCharacteristic(
+    BluetoothCharacteristic characteristic,
+  ) {
+    final properties = characteristic.properties;
+    final id = [
+      characteristic.serviceUuid.toString(),
+      characteristic.characteristicUuid.toString(),
+      characteristic.instanceId.toString(),
+    ].join('|');
+    return BleCharacteristicInfo(
+      id: id,
+      serviceUuid: characteristic.serviceUuid.toString(),
+      characteristicUuid: characteristic.characteristicUuid.toString(),
+      propertiesText: _describeCharacteristicProperties(characteristic),
+      canWrite: properties.write,
+      canWriteWithoutResponse: properties.writeWithoutResponse,
+    );
   }
 
   Future<void> _clearGattCacheIfPossible(BluetoothDevice device) async {
@@ -860,7 +988,24 @@ class _BleGattDebugPageState extends State<BleGattDebugPage> {
         return Column(
           children: [
             _BleStatusBar(controller: controller),
-            Expanded(child: _BleDeviceList(controller: controller)),
+            Expanded(
+              child:
+                  controller.mode == BleMode.explorer &&
+                      controller.explorerCharacteristics.isNotEmpty
+                  ? Column(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _BleDeviceList(controller: controller),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: _BleCharacteristicList(controller: controller),
+                        ),
+                      ],
+                    )
+                  : _BleDeviceList(controller: controller),
+            ),
             _BleMessageBar(
               controller: controller,
               messageController: _messageController,
@@ -880,37 +1025,155 @@ class _BleStatusBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-      child: Row(
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE2E7E7))),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          FilledButton.icon(
-            onPressed: controller.isBusy
-                ? null
-                : controller.isScanning
-                ? controller.stopScan
-                : controller.startScan,
-            icon: Icon(
-              controller.isScanning ? Icons.stop : Icons.bluetooth_searching,
-            ),
-            label: Text(controller.isScanning ? '停止扫描' : '扫描'),
+          Row(
+            children: [
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(96, 42),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: controller.isBusy
+                    ? null
+                    : controller.isScanning
+                    ? controller.stopScan
+                    : controller.startScan,
+                icon: Icon(
+                  controller.isScanning
+                      ? Icons.stop
+                      : Icons.bluetooth_searching,
+                  size: 19,
+                ),
+                label: Text(controller.isScanning ? '停止' : '扫描'),
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: _BleModeTabs(controller: controller)),
+            ],
           ),
-          const SizedBox(width: 10),
-          FilterChip(
-            label: const Text('显示全部'),
-            selected: controller.showAllNamedDevices,
-            onSelected: controller.setShowAllNamedDevices,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              controller.statusText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.end,
-            ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              FilterChip(
+                key: const ValueKey('ble-toggle-extra-devices'),
+                visualDensity: VisualDensity.compact,
+                label: Text(
+                  controller.mode == BleMode.bridge ? '其它设备' : '无名设备',
+                ),
+                selected: controller.showAllNamedDevices,
+                onSelected: controller.setShowAllNamedDevices,
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                controller.isConnected ? Icons.link : Icons.link_off,
+                size: 17,
+                color: controller.isConnected
+                    ? colorScheme.primary
+                    : const Color(0xFF6D7776),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  controller.statusText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BleModeTabs extends StatelessWidget {
+  const _BleModeTabs({required this.controller});
+
+  final BleController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF0EF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFD6DEDD)),
+      ),
+      child: Row(
+        children: [
+          _BleModeTab(
+            label: 'Bridge',
+            selected: controller.mode == BleMode.bridge,
+            enabled: !controller.isBusy,
+            colorScheme: colorScheme,
+            onTap: () => controller.setMode(BleMode.bridge),
+          ),
+          _BleModeTab(
+            label: 'Explorer',
+            selected: controller.mode == BleMode.explorer,
+            enabled: !controller.isBusy,
+            colorScheme: colorScheme,
+            onTap: () => controller.setMode(BleMode.explorer),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BleModeTab extends StatelessWidget {
+  const _BleModeTab({
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.colorScheme,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final ColorScheme colorScheme;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Material(
+        color: selected ? Colors.white : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: enabled ? onTap : null,
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: selected ? colorScheme.primary : const Color(0xFF52605E),
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -941,7 +1204,9 @@ class _BleDeviceList extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   controller.showAllNamedDevices
-                      ? '还没有扫描到有名称设备'
+                      ? controller.mode == BleMode.bridge
+                            ? '还没有扫描到其它有名称设备'
+                            : '还没有扫描到设备'
                       : '默认只显示固定 BLE 服务',
                   textAlign: TextAlign.center,
                 ),
@@ -953,9 +1218,9 @@ class _BleDeviceList extends StatelessWidget {
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       itemCount: devices.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 6),
       itemBuilder: (context, index) {
         final device = devices[index];
         return _BleDeviceTile(
@@ -988,30 +1253,38 @@ class _BleDeviceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Material(
-      color: selected ? colorScheme.primaryContainer : Colors.white,
+      color: Colors.white,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected ? colorScheme.primary : const Color(0xFFE3E9E8),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
                   color: selected
-                      ? colorScheme.primary
+                      ? const Color(0xFFE0F3EF)
                       : const Color(0xFFE7EFEF),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
                   connected ? Icons.link : Icons.bluetooth,
-                  color: selected ? colorScheme.onPrimary : colorScheme.primary,
+                  size: 20,
+                  color: colorScheme.primary,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1020,7 +1293,9 @@ class _BleDeviceTile extends StatelessWidget {
                       device.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -1035,11 +1310,83 @@ class _BleDeviceTile extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 '${device.rssi} dBm',
-                style: Theme.of(context).textTheme.labelLarge,
+                style: Theme.of(context).textTheme.labelMedium,
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _BleCharacteristicList extends StatelessWidget {
+  const _BleCharacteristicList({required this.controller});
+
+  final BleController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final characteristics = controller.explorerCharacteristics;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xFFE0E6E6))),
+      ),
+      child: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        itemCount: characteristics.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 6),
+        itemBuilder: (context, index) {
+          final characteristic = characteristics[index];
+          final selected =
+              controller.selectedCharacteristic?.id == characteristic.id;
+          return Material(
+            key: ValueKey('ble-characteristic-${characteristic.id}'),
+            color: selected
+                ? Theme.of(context).colorScheme.secondaryContainer
+                : const Color(0xFFF8FAFA),
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => controller.selectCharacteristic(characteristic),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      characteristic.isWritable ? Icons.edit : Icons.visibility,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            characteristic.characteristicUuid,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${characteristic.serviceUuid} · ${characteristic.propertiesText}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1077,8 +1424,12 @@ class _BleMessageBar extends StatelessWidget {
                   : null,
               decoration: InputDecoration(
                 isDense: true,
-                prefixIcon: const Icon(Icons.edit_note),
+                prefixIcon: const Icon(Icons.short_text, size: 20),
                 hintText: selected == null ? '先选择 BLE 设备' : '输入消息',
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 12,
+                ),
                 border: const OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(8)),
                 ),
@@ -1095,14 +1446,15 @@ class _BleMessageBar extends StatelessWidget {
             icon: const Icon(Icons.send),
           ),
           const SizedBox(width: 8),
-          FilledButton.icon(
+          IconButton.filledTonal(
+            key: const ValueKey('ble-connect-button'),
+            tooltip: controller.isConnected ? '断开 BLE' : '连接 BLE',
             onPressed: selected == null || controller.isBusy
                 ? null
                 : controller.isConnected
                 ? controller.disconnect
                 : controller.connectSelected,
             icon: Icon(controller.isConnected ? Icons.link_off : Icons.link),
-            label: Text(controller.isConnected ? '断开 BLE' : '连接 BLE'),
           ),
         ],
       ),
@@ -1121,10 +1473,26 @@ class _BleDetailsPanel extends StatelessWidget {
     final sent = controller.lastSentMessage;
     final rows = [
       DetailRowData(label: '状态', value: controller.statusText),
+      DetailRowData(
+        label: '模式',
+        value: controller.mode == BleMode.bridge ? 'Bridge' : 'Explorer',
+      ),
       DetailRowData(label: '选中设备', value: selected?.name ?? '无'),
       DetailRowData(label: '设备 ID', value: selected?.id ?? '-'),
-      const DetailRowData(label: '服务 UUID', value: bleBridgeServiceUuid),
-      const DetailRowData(label: '特征 UUID', value: bleBridgeCharacteristicUuid),
+      DetailRowData(
+        label: '服务 UUID',
+        value:
+            controller.selectedCharacteristic?.serviceUuid ??
+            (controller.mode == BleMode.bridge ? bleBridgeServiceUuid : '-'),
+      ),
+      DetailRowData(
+        label: '特征 UUID',
+        value:
+            controller.selectedCharacteristic?.characteristicUuid ??
+            (controller.mode == BleMode.bridge
+                ? bleBridgeCharacteristicUuid
+                : '-'),
+      ),
       DetailRowData(
         label: '特征属性',
         value: controller.characteristicPropertiesText ?? '-',
@@ -1141,7 +1509,11 @@ class _BleDetailsPanel extends StatelessWidget {
         DetailRowData(label: '错误', value: controller.lastError!),
     ];
 
-    return SharedDetailsPanel(connected: controller.isConnected, rows: rows);
+    return SharedDetailsPanel(
+      connected: controller.isConnected,
+      rows: rows,
+      compact: true,
+    );
   }
 }
 
@@ -1435,17 +1807,19 @@ class SharedDetailsPanel extends StatelessWidget {
     super.key,
     required this.connected,
     required this.rows,
+    this.compact = false,
   });
 
   final bool connected;
   final List<DetailRowData> rows;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(maxHeight: 220),
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+      constraints: BoxConstraints(maxHeight: compact ? 170 : 220),
+      padding: EdgeInsets.fromLTRB(16, compact ? 8 : 10, 16, compact ? 10 : 14),
       decoration: const BoxDecoration(color: Color(0xFF112624)),
       child: DefaultTextStyle(
         style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.35),
@@ -1472,7 +1846,7 @@ class SharedDetailsPanel extends StatelessWidget {
                   Text(connected ? '已连接' : '未连接'),
                 ],
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: compact ? 4 : 8),
               for (final row in rows)
                 _DetailLine(label: row.label, value: row.value),
             ],

@@ -145,7 +145,7 @@ void main() {
     expect(find.textContaining('-35 dBm'), findsOneWidget);
     expect(find.text('Sensor'), findsNothing);
 
-    await tester.tap(find.text('显示全部'));
+    await tester.tap(find.byKey(const ValueKey('ble-toggle-extra-devices')));
     await tester.pump();
     expect(find.text('Sensor'), findsOneWidget);
 
@@ -153,9 +153,9 @@ void main() {
     await tester.pump();
     expect(find.textContaining('已选择'), findsWidgets);
 
-    await tester.tap(find.text('连接 BLE'));
+    await tester.tap(find.byKey(const ValueKey('ble-connect-button')));
     await tester.pump();
-    expect(find.text('断开 BLE'), findsOneWidget);
+    expect(bleController.isConnected, isTrue);
     expect(find.textContaining(bleBridgeServiceUuid), findsOneWidget);
     expect(find.textContaining('writeWithoutResponse'), findsOneWidget);
 
@@ -168,10 +168,60 @@ void main() {
     expect(bleController.sentMessages, ['hello ble']);
     expect(find.textContaining('Echo: hello ble'), findsOneWidget);
 
-    await tester.tap(find.text('断开 BLE'));
+    await tester.tap(find.byKey(const ValueKey('ble-connect-button')));
     await tester.pump();
-    expect(find.text('连接 BLE'), findsOneWidget);
+    expect(bleController.isConnected, isFalse);
   });
+
+  testWidgets(
+    'BLE explorer mode lists non-bridge devices and characteristics',
+    (tester) async {
+      final bleController = FakeBleController();
+      bleController.setDevices([
+        const BleDeviceInfo(
+          id: 'AA:BB:CC:DD:EE:01',
+          name: 'Windows PC',
+          rssi: -35,
+          advertisesBridgeService: true,
+        ),
+        const BleDeviceInfo(id: 'AA:BB:CC:DD:EE:02', name: 'Sensor', rssi: -20),
+      ]);
+
+      await tester.pumpWidget(
+        BluetoothClientApp(
+          controller: FakeRfcommController(),
+          bleController: bleController,
+        ),
+      );
+      await tester.tap(find.text('BLE'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Explorer'));
+      await tester.pump();
+      expect(find.text('Sensor'), findsOneWidget);
+
+      await tester.tap(find.text('Sensor'));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('ble-connect-button')));
+      await tester.pump();
+
+      expect(find.textContaining('service-a'), findsWidgets);
+      expect(find.textContaining('char-write'), findsWidgets);
+
+      await tester.tap(
+        find.byKey(const ValueKey('ble-characteristic-service-a|char-write|0')),
+      );
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey('ble-message-input')),
+        'hello sensor',
+      );
+      await tester.tap(find.byKey(const ValueKey('ble-send-button')));
+      await tester.pump();
+
+      expect(bleController.sentMessages, ['hello sensor']);
+    },
+  );
 }
 
 class FakeRfcommController extends RfcommController {
@@ -291,12 +341,15 @@ class FakeBleController extends BleController {
   bool _isScanning = false;
   bool _isConnected = false;
   bool _showAllNamedDevices = false;
+  BleMode _mode = BleMode.bridge;
   String _statusText = '就绪';
   String? _lastError;
   String? _lastReceivedText;
   OutboundMessage? _lastSentMessage;
   BleDeviceInfo? _selectedDevice;
+  BleCharacteristicInfo? _selectedCharacteristic;
   List<BleDeviceInfo> _devices = [];
+  List<BleCharacteristicInfo> _explorerCharacteristics = [];
   int? _mtu;
   int _serviceCount = 0;
   String? _connectedAtText;
@@ -322,6 +375,9 @@ class FakeBleController extends BleController {
   bool get showAllNamedDevices => _showAllNamedDevices;
 
   @override
+  BleMode get mode => _mode;
+
+  @override
   String get statusText => _statusText;
 
   @override
@@ -337,8 +393,19 @@ class FakeBleController extends BleController {
   BleDeviceInfo? get selectedDevice => _selectedDevice;
 
   @override
-  List<BleDeviceInfo> get devices =>
-      filterBleDevices(_devices, showAllNamedDevices: _showAllNamedDevices);
+  List<BleDeviceInfo> get devices => _mode == BleMode.bridge
+      ? filterBleDevices(_devices, showAllNamedDevices: _showAllNamedDevices)
+      : filterExplorerDevices(
+          _devices,
+          showUnnamedDevices: _showAllNamedDevices,
+        );
+
+  @override
+  List<BleCharacteristicInfo> get explorerCharacteristics =>
+      _explorerCharacteristics;
+
+  @override
+  BleCharacteristicInfo? get selectedCharacteristic => _selectedCharacteristic;
 
   @override
   int? get mtu => _mtu;
@@ -351,6 +418,17 @@ class FakeBleController extends BleController {
 
   @override
   String? get characteristicPropertiesText => _characteristicPropertiesText;
+
+  @override
+  void setMode(BleMode value) {
+    _mode = value;
+    _selectedDevice = null;
+    _selectedCharacteristic = null;
+    _explorerCharacteristics = [];
+    _characteristicPropertiesText = null;
+    _statusText = value == BleMode.bridge ? 'Bridge 模式' : 'Explorer 模式';
+    notifyListeners();
+  }
 
   @override
   void setShowAllNamedDevices(bool value) {
@@ -375,7 +453,19 @@ class FakeBleController extends BleController {
   @override
   Future<void> selectDevice(BleDeviceInfo device) async {
     _selectedDevice = device;
+    _selectedCharacteristic = null;
+    _explorerCharacteristics = [];
     _statusText = '已选择 ${device.name}';
+    notifyListeners();
+  }
+
+  @override
+  Future<void> selectCharacteristic(
+    BleCharacteristicInfo characteristic,
+  ) async {
+    _selectedCharacteristic = characteristic;
+    _characteristicPropertiesText = characteristic.propertiesText;
+    _statusText = '已选择 Characteristic';
     notifyListeners();
   }
 
@@ -389,9 +479,40 @@ class FakeBleController extends BleController {
     _isConnected = true;
     _isScanning = false;
     _mtu = 512;
-    _serviceCount = 1;
+    _serviceCount = _mode == BleMode.bridge ? 1 : 2;
     _connectedAtText = '12:00:00';
-    _characteristicPropertiesText = 'read, writeWithoutResponse, notify';
+    if (_mode == BleMode.bridge) {
+      _selectedCharacteristic = const BleCharacteristicInfo(
+        id: 'bridge',
+        serviceUuid: bleBridgeServiceUuid,
+        characteristicUuid: bleBridgeCharacteristicUuid,
+        propertiesText: 'read, writeWithoutResponse, notify',
+        canWrite: false,
+        canWriteWithoutResponse: true,
+      );
+      _characteristicPropertiesText = 'read, writeWithoutResponse, notify';
+    } else {
+      _explorerCharacteristics = const [
+        BleCharacteristicInfo(
+          id: 'service-a|char-write|0',
+          serviceUuid: 'service-a',
+          characteristicUuid: 'char-write',
+          propertiesText: 'read, write, notify',
+          canWrite: true,
+          canWriteWithoutResponse: false,
+        ),
+        BleCharacteristicInfo(
+          id: 'service-b|char-read|0',
+          serviceUuid: 'service-b',
+          characteristicUuid: 'char-read',
+          propertiesText: 'read',
+          canWrite: false,
+          canWriteWithoutResponse: false,
+        ),
+      ];
+      _selectedCharacteristic = _explorerCharacteristics.first;
+      _characteristicPropertiesText = _selectedCharacteristic!.propertiesText;
+    }
     _statusText = '已连接 ${_selectedDevice!.name}';
     notifyListeners();
   }
@@ -399,6 +520,8 @@ class FakeBleController extends BleController {
   @override
   Future<void> disconnect() async {
     _isConnected = false;
+    _selectedCharacteristic = null;
+    _explorerCharacteristics = [];
     _characteristicPropertiesText = null;
     _statusText = '已断开';
     notifyListeners();

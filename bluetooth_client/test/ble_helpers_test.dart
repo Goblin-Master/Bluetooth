@@ -95,6 +95,39 @@ void main() {
     expect(defaultBleScanServiceFilters, isEmpty);
   });
 
+  test('filters explorer devices independently from bridge UUID', () {
+    final devices = [
+      const BleDeviceInfo(id: '1', name: 'Unknown', rssi: -30),
+      const BleDeviceInfo(
+        id: '2',
+        name: 'Windows PC',
+        rssi: -80,
+        advertisesBridgeService: true,
+      ),
+      const BleDeviceInfo(id: '3', name: 'Sensor', rssi: -40),
+    ];
+
+    expect(filterExplorerDevices(devices, showUnnamedDevices: false), [
+      const BleDeviceInfo(id: '3', name: 'Sensor', rssi: -40),
+      const BleDeviceInfo(
+        id: '2',
+        name: 'Windows PC',
+        rssi: -80,
+        advertisesBridgeService: true,
+      ),
+    ]);
+    expect(filterExplorerDevices(devices, showUnnamedDevices: true), [
+      const BleDeviceInfo(id: '1', name: 'Unknown', rssi: -30),
+      const BleDeviceInfo(id: '3', name: 'Sensor', rssi: -40),
+      const BleDeviceInfo(
+        id: '2',
+        name: 'Windows PC',
+        rssi: -80,
+        advertisesBridgeService: true,
+      ),
+    ]);
+  });
+
   test('selects BLE write mode from characteristic properties', () {
     expect(
       selectBleWriteMode(canWrite: true, canWriteWithoutResponse: true),
